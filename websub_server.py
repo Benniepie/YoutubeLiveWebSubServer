@@ -45,7 +45,7 @@ def home():
     """A simple homepage to show the server is running."""
     return "YouTube WebSub Server is running!"
 
-@app.route('/webhook', methods=['GET', 'POST'])
+@app.route('/webhook', methods=['GET', 'POST'], strict_slashes=False)
 @require_google_ip  # Only allow requests from Google's IP ranges
 @rate_limit(max_requests=100, window_seconds=60)  # Rate limiting
 def webhook():

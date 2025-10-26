@@ -40,9 +40,9 @@ logs/
 *.md
 !README.md
 
-# Test files
-test_*.py
-*_test.py
+# Test files (commented out to include them)
+# test_*.py
+# *_test.py
 
 # Environment
 .env

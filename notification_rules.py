@@ -182,7 +182,11 @@ class NotificationRules:
         
         if notification_type == 'live_now':
             # Stream is LIVE NOW - RED with urgent emoji
-            content = f"@everyone {custom_emoji} **{channel_name} LIVE stream has started NOW!**\n{url}"
+            # Check if @everyone should be included (can be disabled via env var)
+            import os
+            ping_everyone = os.getenv('DISCORD_PING_EVERYONE', 'true').lower() == 'true'
+            mention = "@everyone " if ping_everyone else ""
+            content = f"{mention}{custom_emoji} **{channel_name} LIVE stream has started NOW!**\n{url}"
             embed = {
                 'title': f'🔴 LIVE NOW: {title}',
                 'url': url,  # Makes title clickable
