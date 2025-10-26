@@ -117,3 +117,43 @@ Thumbs.db
 # Project specific
 *.secret
 config.local.py
+
+# Sensitive data - DO NOT COMMIT
+.env
+.env.local
+.env.production
+*.db
+*.db-journal
+notifications.db*
+
+# Logs and data
+logs/
+data/
+Log.txt
+*.log
+
+# Docker volumes
+docker-compose.override.yml
+
+# Backup files
+*.backup
+*.bak
+
+# Test outputs
+*_full_metadata.json
+test_*.db
+
+# Personal Discord info
+DISCORD.md
+
+# Test and temporary files
+check_latest.py
+test_clickable.py
+import_logs.py
+RESTART_INSTRUCTIONS.md
+test_current_behavior.md
+config_options.md
+NOTIFICATION_ANALYSIS.md
+QUICK_START.md
+SUMMARY.md
+CLEANUP_PLAN.md

@@ -15,7 +15,7 @@ def test_server():
         time.sleep(3)
         
         # Test the home endpoint
-        response = requests.get('http://localhost:5000/')
+        response = requests.get('http://localhost:5001/')
         if response.status_code == 200:
             print("✅ Server is running!")
             print(f"Response: {response.text}")
@@ -23,7 +23,7 @@ def test_server():
             print(f"❌ Server responded with status {response.status_code}")
             
         # Test the webhook endpoint with a GET request (simulating hub verification)
-        response = requests.get('http://localhost:5000/webhook?hub.challenge=test123&hub.mode=subscribe&hub.topic=test')
+        response = requests.get('http://localhost:5001/webhook?hub.challenge=test123&hub.mode=subscribe&hub.topic=test')
         if response.status_code == 200 and response.text == 'test123':
             print("✅ Webhook verification endpoint working!")
         else:

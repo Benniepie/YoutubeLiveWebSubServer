@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  websub-server:
+    build: .
+    container_name: youtube-websub
+    restart: unless-stopped
+    
+    # Use host networking for Tailscale access
+    network_mode: host
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Mount volumes
+    volumes:
+      # Persist database
+      - ./data:/app/data
+      # Mount .env for easy updates
+      - ./.env:/app/.env:ro
+      # Optional: mount logs directory
+      - ./logs:/app/logs
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5001/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
