@@ -315,4 +315,4 @@ if __name__ == '__main__':
     # threading.Timer(2.0, send_subscription_request, args=["unsubscribe"]).start()
 
     print("Starting Flask server on port 5001...")
-    app.run(port=5001, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False)
