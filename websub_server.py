@@ -147,7 +147,25 @@ def webhook():
                 # ALWAYS fetch metadata with yt-dlp for accurate live detection
                 # This is cheap - only ~12 calls per day for your channel
                 print("  - Fetching metadata with yt-dlp...")
-                ytdlp_details = ytdlp.get_video_details(video_id)
+                
+                # Retry logic for newly created videos that might not be ready yet
+                max_retries = 3
+                retry_delays = [2, 5, 10]  # seconds
+                ytdlp_details = None
+                
+                for attempt in range(max_retries):
+                    ytdlp_details = ytdlp.get_video_details(video_id)
+                    
+                    if ytdlp_details:
+                        break  # Success!
+                    
+                    # Retry for any new video that fails (YouTube might not be ready)
+                    if is_new and attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        print(f"    ⏳ Video not ready yet, retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                    else:
+                        break  # Don't retry on last attempt or for existing videos
                 
                 if ytdlp_details:
                     # Update database with metadata
@@ -179,7 +197,10 @@ def webhook():
                     video_data['scheduled_start_time'] = ytdlp_details.get('scheduled_start_time')
                     video_data['live_status'] = actual_live_status
                 else:
-                    print("    ⚠️  Failed to fetch yt-dlp metadata")
+                    print("    ⚠️  Failed to fetch yt-dlp metadata after retries")
+                    # Keep title-based detection as fallback
+                    if video_data.get('is_live_stream'):
+                        print("    ℹ️  Using title-based live stream detection as fallback")
                 
                 # Apply smart notification rules
                 should_notify, notification_type = notification_rules.should_notify(
