@@ -17,13 +17,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-# TODO: Replace these values with your own.
-# You can find the Channel ID in the source code of a channel's homepage,
-# look for "channelId".
-YOUTUBE_CHANNEL_ID = "UCBJycsmduvYEL83R_U4JriQ" # Example: Google Developers channel
-# This must be your publicly accessible URL. When using Tailscale, this will
-# be the URL they provide, e.g., "https://your-tailnet-name.ts.net"
-CALLBACK_URL_BASE = "https://laptop.shark-ray.ts.net"
+# Load from environment variables (set in .env file)
+YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
+CALLBACK_URL_BASE = os.getenv("CALLBACK_URL_BASE")
 # A secret key used to verify the authenticity of notifications.
 # Keep this private.
 SECRET_KEY = "a_very_secret_key_12345"

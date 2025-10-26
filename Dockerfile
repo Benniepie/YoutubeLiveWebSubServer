@@ -17,7 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY *.py .
-COPY .env.example .env.example
 
 # Create directory for database
 RUN mkdir -p /app/data
