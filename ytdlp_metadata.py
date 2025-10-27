@@ -5,6 +5,7 @@ import subprocess
 import json
 from typing import Dict, Optional
 from datetime import datetime
+from html_fallback import check_live_status_html
 
 class YTDLPMetadata:
     """Fetch video metadata using yt-dlp (no API quota required!)"""
@@ -27,7 +28,27 @@ class YTDLPMetadata:
             )
             
             if result.returncode != 0:
-                print(f"  ❌ yt-dlp error: {result.stderr}")
+                error_msg = result.stderr
+                print(f"  ❌ yt-dlp error: {error_msg}")
+                
+                # Check if it's a bot detection error
+                if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
+                    print(f"  🔄 Bot detection - trying HTML fallback...")
+                    html_result = check_live_status_html(video_id)
+                    
+                    if html_result['success']:
+                        print(f"  ✅ HTML fallback succeeded: {html_result['live_status']}")
+                        # Return minimal metadata with live status from HTML
+                        return {
+                            'video_id': video_id,
+                            'live_status': html_result['live_status'],
+                            'is_live': html_result['live_status'] == 'is_live',
+                            'was_live': html_result['live_status'] == 'was_live',
+                            'scheduled_start_time': None,  # Can't get from HTML
+                        }
+                    else:
+                        print(f"  ❌ HTML fallback also failed")
+                
                 return None
             
             data = json.loads(result.stdout)
