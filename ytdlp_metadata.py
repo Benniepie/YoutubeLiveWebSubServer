@@ -31,6 +31,18 @@ class YTDLPMetadata:
                 error_msg = result.stderr
                 print(f"  ❌ yt-dlp error: {error_msg}")
                 
+                # Check if it's a scheduled live stream (not an error, just info)
+                if "live event will begin" in error_msg.lower():
+                    print(f"  📅 Scheduled live stream detected")
+                    # Return minimal data indicating it's upcoming
+                    return {
+                        'video_id': video_id,
+                        'live_status': 'is_upcoming',
+                        'is_live': False,
+                        'was_live': False,
+                        'scheduled_start_time': None,  # Could parse "in X minutes" but unreliable
+                    }
+                
                 # Check if it's a bot detection error
                 if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
                     print(f"  🔄 Bot detection - trying HTML fallback...")
