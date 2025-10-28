@@ -144,15 +144,10 @@ def webhook():
                 print(f"  - Event Type: {event_type}")
                 print(f"  - Is New: {is_new}")
                 
-                # Send debug notification to Telegram test bot
-                telegram_debug.send_message(
-                    f"📥 <b>WebSub Event Received</b>\n\n"
-                    f"<b>Title:</b> {title}\n"
-                    f"<b>Event:</b> {event_type}\n"
-                    f"<b>New:</b> {'Yes' if is_new else 'No'}\n"
-                    f"<b>Video ID:</b> {video_id}\n\n"
-                    f"🔄 Processing..."
-                )
+                # Track processing steps for debug notification
+                processing_log = []
+                processing_log.append(f"📥 Event: {event_type}")
+                processing_log.append(f"🆕 New: {'Yes' if is_new else 'No'}")
                 
                 # ALWAYS fetch metadata with yt-dlp for accurate live detection
                 # This is cheap - only ~12 calls per day for your channel
@@ -171,14 +166,17 @@ def webhook():
                     ytdlp_details = ytdlp.get_video_details(video_id, expected_live=expected_live)
                     
                     if ytdlp_details:
+                        processing_log.append(f"✅ yt-dlp: Success")
                         break  # Success!
                     
                     # Retry for any new video that fails (YouTube might not be ready)
                     if is_new and attempt < max_retries - 1:
                         delay = retry_delays[attempt]
                         print(f"    ⏳ Video not ready yet, retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                        processing_log.append(f"⏳ yt-dlp retry {attempt + 1}/{max_retries}")
                         time.sleep(delay)
                     else:
+                        processing_log.append(f"❌ yt-dlp: Failed after {attempt + 1} attempts")
                         break  # Don't retry on last attempt or for existing videos
                 
                 if ytdlp_details:
@@ -199,8 +197,11 @@ def webhook():
                     is_actually_live = actual_live_status in ['is_live', 'is_upcoming', 'was_live']
                     
                     print(f"    🔴 Live Status: {actual_live_status}")
+                    processing_log.append(f"🔴 Status: {actual_live_status}")
+                    
                     if ytdlp_details.get('scheduled_start_time'):
                         print(f"    📅 Scheduled: {ytdlp_details['scheduled_start_time']}")
+                        processing_log.append(f"📅 Scheduled: {ytdlp_details['scheduled_start_time']}")
                     if ytdlp_details.get('duration_string'):
                         print(f"    ⏱️  Duration: {ytdlp_details['duration_string']}")
                     if ytdlp_details.get('view_count'):
@@ -212,6 +213,7 @@ def webhook():
                     video_data['live_status'] = actual_live_status
                 else:
                     print("    ⚠️  Failed to fetch yt-dlp metadata after retries")
+                    processing_log.append("⚠️ Using title-based detection")
                     # Keep title-based detection as fallback
                     if video_data.get('is_live_stream'):
                         print("    ℹ️  Using title-based live stream detection as fallback")
@@ -221,8 +223,24 @@ def webhook():
                     video_data, event_type, is_new
                 )
                 
+                # Build comprehensive debug message
+                status_emoji = {
+                    'is_live': '🔴 LIVE NOW',
+                    'is_upcoming': '📅 SCHEDULED',
+                    'was_live': '📼 ENDED',
+                    'not_live': '📹 VIDEO'
+                }.get(video_data.get('live_status', 'not_live'), '❓ UNKNOWN')
+                
+                debug_caption = f"<b>{title}</b>\n\n"
+                debug_caption += f"{status_emoji}\n"
+                debug_caption += f"👤 {author_name}\n\n"
+                
+                debug_caption += f"<b>📊 Processing Log:</b>\n"
+                debug_caption += "\n".join(processing_log) + "\n\n"
+                
                 if should_notify:
                     print(f"  - Sending Discord notification ({notification_type})...")
+                    processing_log.append(f"📤 Sending: {notification_type}")
                     
                     # Get formatted message
                     message_data = notification_rules.get_notification_message(
@@ -237,27 +255,21 @@ def webhook():
                         if result['success']:
                             print("    ✅ Discord notification sent!")
                             db.mark_delivered(video_id, 'discord', 'success', result.get('response'))
+                            processing_log.append("✅ Discord: SENT")
                             
-                            # Send success notification to Telegram test bot
-                            telegram_debug.send_message(
-                                f"✅ <b>Discord Notification SENT</b>\n\n"
-                                f"<b>Type:</b> {notification_type}\n"
-                                f"<b>Title:</b> {title}\n"
-                                f"<b>Live Status:</b> {video_data.get('live_status', 'unknown')}\n"
-                                f"<b>URL:</b> {video_url}"
-                            )
+                            debug_caption += f"<b>✅ USER NOTIFIED</b>\n"
+                            debug_caption += f"Type: {notification_type}\n"
+                            debug_caption += f"Platform: Discord\n\n"
+                            debug_caption += f"<a href='{video_url}'>Watch Video</a>"
                         else:
                             print(f"    ❌ Discord failed: {result.get('error')}")
                             db.mark_delivered(video_id, 'discord', 'failed', error_message=result.get('error'))
+                            processing_log.append(f"❌ Discord: FAILED")
                             
-                            # Send failure notification to Telegram test bot
-                            telegram_debug.send_message(
-                                f"❌ <b>Discord Notification FAILED</b>\n\n"
-                                f"<b>Type:</b> {notification_type}\n"
-                                f"<b>Title:</b> {title}\n"
-                                f"<b>Error:</b> {result.get('error')}\n"
-                                f"<b>URL:</b> {video_url}"
-                            )
+                            debug_caption += f"<b>❌ NOTIFICATION FAILED</b>\n"
+                            debug_caption += f"Type: {notification_type}\n"
+                            debug_caption += f"Error: {result.get('error')[:100]}\n\n"
+                            debug_caption += f"<a href='{video_url}'>Watch Video</a>"
                 else:
                     if notification_type:
                         print(f"  - Skipping notification: {notification_type}")
@@ -266,15 +278,15 @@ def webhook():
                         print("  - No notification needed")
                         reason = "Not a live stream or already notified"
                     
-                    # Send skip notification to Telegram test bot
-                    telegram_debug.send_message(
-                        f"⏭️ <b>Notification Skipped</b>\n\n"
-                        f"<b>Title:</b> {title}\n"
-                        f"<b>Event:</b> {event_type}\n"
-                        f"<b>Live Status:</b> {video_data.get('live_status', 'unknown')}\n"
-                        f"<b>Reason:</b> {reason}\n"
-                        f"<b>URL:</b> {video_url}"
-                    )
+                    processing_log.append(f"⏭️ Skipped: {reason}")
+                    
+                    debug_caption += f"<b>⏭️ NO NOTIFICATION</b>\n"
+                    debug_caption += f"Reason: {reason}\n\n"
+                    debug_caption += f"<a href='{video_url}'>Watch Video</a>"
+                
+                # Send comprehensive debug notification with thumbnail
+                thumbnail_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+                telegram_debug.send_photo(thumbnail_url, debug_caption)
                 
                 # Priority 2: WhatsApp for live streams (when implemented)
                 # Priority 3: Facebook for live streams (when implemented)
