@@ -10,10 +10,14 @@ from html_fallback import check_live_status_html
 class YTDLPMetadata:
     """Fetch video metadata using yt-dlp (no API quota required!)"""
     
-    def get_video_details(self, video_id: str) -> Optional[Dict]:
+    def get_video_details(self, video_id: str, expected_live: bool = False) -> Optional[Dict]:
         """
         Fetch detailed video information using yt-dlp
         Returns all the same info as YouTube API but without quota cost!
+        
+        Args:
+            video_id: YouTube video ID
+            expected_live: If True, HTML fallback will retry if it gets 'not_live' (timing lag mitigation)
         """
         url = f"https://www.youtube.com/watch?v={video_id}"
         
@@ -33,20 +37,38 @@ class YTDLPMetadata:
                 
                 # Check if it's a scheduled live stream (not an error, just info)
                 if "live event will begin" in error_msg.lower():
-                    print(f"  📅 Scheduled live stream detected")
-                    # Return minimal data indicating it's upcoming
+                    print(f"  📅 Scheduled live stream detected - parsing time...")
+                    
+                    # Extract minutes from error message
+                    import re
+                    minutes_match = re.search(r'begin in (\d+) minute', error_msg)
+                    
+                    scheduled_time = None
+                    if minutes_match:
+                        minutes = int(minutes_match.group(1))
+                        # Only use if reasonable (< 120 minutes = 2 hours)
+                        if minutes <= 120:
+                            from datetime import datetime, timedelta, timezone
+                            scheduled_dt = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+                            scheduled_time = scheduled_dt.isoformat().replace('+00:00', 'Z')
+                            print(f"  ⏰ Calculated start time: {minutes} minutes from now")
+                    
+                    # Return data indicating it's upcoming with calculated time
                     return {
                         'video_id': video_id,
                         'live_status': 'is_upcoming',
                         'is_live': False,
                         'was_live': False,
-                        'scheduled_start_time': None,  # Could parse "in X minutes" but unreliable
+                        'scheduled_start_time': scheduled_time,
                     }
                 
                 # Check if it's a bot detection error
                 if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
                     print(f"  🔄 Bot detection - trying HTML fallback...")
-                    html_result = check_live_status_html(video_id)
+                    
+                    # Use retry logic for HTML fallback to handle timing lag
+                    # Retry if we expect it might be live (based on context from caller)
+                    html_result = check_live_status_html(video_id, retry_on_not_live=expected_live)
                     
                     if html_result['success']:
                         print(f"  ✅ HTML fallback succeeded: {html_result['live_status']}")

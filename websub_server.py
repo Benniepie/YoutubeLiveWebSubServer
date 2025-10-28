@@ -149,8 +149,12 @@ def webhook():
                 retry_delays = [2, 5, 10]  # seconds
                 ytdlp_details = None
                 
+                # Pass context about expected live status to help with HTML fallback
+                # If event_type is 'live_started', we expect it to be live
+                expected_live = (event_type == 'live_started')
+                
                 for attempt in range(max_retries):
-                    ytdlp_details = ytdlp.get_video_details(video_id)
+                    ytdlp_details = ytdlp.get_video_details(video_id, expected_live=expected_live)
                     
                     if ytdlp_details:
                         break  # Success!
