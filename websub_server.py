@@ -40,6 +40,10 @@ email = EmailNotifier()
 ytdlp = YTDLPMetadata()
 notification_rules = NotificationRules(db)
 
+# Import Telegram for debug monitoring
+from telegram_notifier import TelegramNotifier
+telegram_debug = TelegramNotifier(use_test_bot=True)  # Use test bot for monitoring
+
 @app.route('/')
 def home():
     """A simple homepage to show the server is running."""
@@ -140,6 +144,16 @@ def webhook():
                 print(f"  - Event Type: {event_type}")
                 print(f"  - Is New: {is_new}")
                 
+                # Send debug notification to Telegram test bot
+                telegram_debug.send_message(
+                    f"📥 <b>WebSub Event Received</b>\n\n"
+                    f"<b>Title:</b> {title}\n"
+                    f"<b>Event:</b> {event_type}\n"
+                    f"<b>New:</b> {'Yes' if is_new else 'No'}\n"
+                    f"<b>Video ID:</b> {video_id}\n\n"
+                    f"🔄 Processing..."
+                )
+                
                 # ALWAYS fetch metadata with yt-dlp for accurate live detection
                 # This is cheap - only ~12 calls per day for your channel
                 print("  - Fetching metadata with yt-dlp...")
@@ -223,14 +237,44 @@ def webhook():
                         if result['success']:
                             print("    ✅ Discord notification sent!")
                             db.mark_delivered(video_id, 'discord', 'success', result.get('response'))
+                            
+                            # Send success notification to Telegram test bot
+                            telegram_debug.send_message(
+                                f"✅ <b>Discord Notification SENT</b>\n\n"
+                                f"<b>Type:</b> {notification_type}\n"
+                                f"<b>Title:</b> {title}\n"
+                                f"<b>Live Status:</b> {video_data.get('live_status', 'unknown')}\n"
+                                f"<b>URL:</b> {video_url}"
+                            )
                         else:
                             print(f"    ❌ Discord failed: {result.get('error')}")
                             db.mark_delivered(video_id, 'discord', 'failed', error_message=result.get('error'))
+                            
+                            # Send failure notification to Telegram test bot
+                            telegram_debug.send_message(
+                                f"❌ <b>Discord Notification FAILED</b>\n\n"
+                                f"<b>Type:</b> {notification_type}\n"
+                                f"<b>Title:</b> {title}\n"
+                                f"<b>Error:</b> {result.get('error')}\n"
+                                f"<b>URL:</b> {video_url}"
+                            )
                 else:
                     if notification_type:
                         print(f"  - Skipping notification: {notification_type}")
+                        reason = notification_type
                     else:
                         print("  - No notification needed")
+                        reason = "Not a live stream or already notified"
+                    
+                    # Send skip notification to Telegram test bot
+                    telegram_debug.send_message(
+                        f"⏭️ <b>Notification Skipped</b>\n\n"
+                        f"<b>Title:</b> {title}\n"
+                        f"<b>Event:</b> {event_type}\n"
+                        f"<b>Live Status:</b> {video_data.get('live_status', 'unknown')}\n"
+                        f"<b>Reason:</b> {reason}\n"
+                        f"<b>URL:</b> {video_url}"
+                    )
                 
                 # Priority 2: WhatsApp for live streams (when implemented)
                 # Priority 3: Facebook for live streams (when implemented)
