@@ -1,18 +1,64 @@
 """
 YouTube Data API v3 integration to fetch additional video metadata
 that's not available in the WebSub feed
+
+Uses OAuth2 authentication with client_secret.json
 """
 import os
-import requests
+import pickle
 from typing import Dict, Optional
 from datetime import datetime
+import google_auth_oauthlib.flow
+import googleapiclient.discovery
+import googleapiclient.errors
+from google.auth.transport.requests import Request
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 
 class YouTubeAPI:
     """Fetch additional video metadata from YouTube Data API v3"""
     
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get('YOUTUBE_API_KEY')
-        self.base_url = "https://www.googleapis.com/youtube/v3"
+    def __init__(self, client_secrets_file: str = "client_secret.json"):
+        self.client_secrets_file = client_secrets_file
+        self.credentials = None
+        self.youtube = None
+        self._authenticate()
+    
+    def _authenticate(self):
+        """Authenticate using OAuth2 with token caching"""
+        # Token file stores the user's access and refresh tokens
+        token_file = 'token.pickle'
+        
+        # Try to load existing credentials
+        if os.path.exists(token_file):
+            print(f"  📄 Loading credentials from {token_file}")
+            with open(token_file, 'rb') as token:
+                self.credentials = pickle.load(token)
+        else:
+            raise FileNotFoundError(f"Token file not found: {token_file}. Run authentication locally first.")
+        
+        # If credentials expired, try to refresh
+        if not self.credentials.valid:
+            if self.credentials.expired and self.credentials.refresh_token:
+                print(f"  🔄 Refreshing expired credentials...")
+                try:
+                    self.credentials.refresh(Request())
+                    # Save refreshed token
+                    with open(token_file, 'wb') as token:
+                        pickle.dump(self.credentials, token)
+                    print(f"  ✅ Credentials refreshed")
+                except Exception as e:
+                    raise Exception(f"Failed to refresh credentials: {e}. Re-authenticate locally.")
+            else:
+                raise Exception(f"Invalid credentials and cannot refresh. Re-authenticate locally.")
+            
+            # Save credentials for next run
+            with open(token_file, 'wb') as token:
+                pickle.dump(self.credentials, token)
+        
+        # Build the YouTube service
+        self.youtube = googleapiclient.discovery.build(
+            'youtube', 'v3', credentials=self.credentials)
     
     def get_video_details(self, video_id: str) -> Optional[Dict]:
         """
@@ -22,28 +68,25 @@ class YouTubeAPI:
         - Duration
         - View count, like count
         - Tags
+        
+        Quota cost: 1 unit
         """
-        if not self.api_key:
-            print("  ⚠️  YouTube API key not configured - skipping metadata fetch")
+        if not self.youtube:
+            print("  ⚠️  YouTube API not authenticated")
             return None
         
-        url = f"{self.base_url}/videos"
-        params = {
-            'part': 'snippet,contentDetails,liveStreamingDetails,statistics,status',
-            'id': video_id,
-            'key': self.api_key
-        }
-        
         try:
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            request = self.youtube.videos().list(
+                part='snippet,contentDetails,liveStreamingDetails,statistics,status',
+                id=video_id
+            )
+            response = request.execute()
             
-            if not data.get('items'):
+            if not response.get('items'):
                 print(f"  ⚠️  No video found with ID: {video_id}")
                 return None
             
-            video = data['items'][0]
+            video = response['items'][0]
             
             # Extract relevant fields
             snippet = video.get('snippet', {})
@@ -90,7 +133,10 @@ class YouTubeAPI:
             
             return result
             
-        except requests.exceptions.RequestException as e:
+        except googleapiclient.errors.HttpError as e:
+            print(f"  ❌ YouTube API error: {e}")
+            return None
+        except Exception as e:
             print(f"  ❌ Error fetching video details: {e}")
             return None
     
