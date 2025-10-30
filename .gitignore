@@ -160,3 +160,7 @@ CLEANUP_PLAN.md
 
 # Progress updates (date-based naming: PROGRESS_YYYYMMDD.md)
 PROGRESS_*.md
+
+# YouTube API credentials - DO NOT COMMIT
+client_secret.json
+token.pickle

@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from flask import Flask, request, Response
 from database import NotificationDB
 from notifiers import DiscordNotifier, WhatsAppNotifier, FacebookNotifier, EmailNotifier
-from ytdlp_metadata import YTDLPMetadata
+from youtube_metadata import YouTubeMetadata
 from notification_rules import NotificationRules
 from security import require_google_ip, rate_limit
 from dotenv import load_dotenv
@@ -37,7 +37,7 @@ discord = DiscordNotifier()
 whatsapp = WhatsAppNotifier()
 facebook = FacebookNotifier()
 email = EmailNotifier()
-ytdlp = YTDLPMetadata()
+youtube = YouTubeMetadata()
 notification_rules = NotificationRules(db)
 
 # Import Telegram for debug monitoring
@@ -149,71 +149,49 @@ def webhook():
                 processing_log.append(f"📥 Event: {event_type}")
                 processing_log.append(f"🆕 New: {'Yes' if is_new else 'No'}")
                 
-                # ALWAYS fetch metadata with yt-dlp for accurate live detection
-                # This is cheap - only ~12 calls per day for your channel
-                print("  - Fetching metadata with yt-dlp...")
+                # Fetch metadata with YouTube API (reliable, no retries needed)
+                print("  - Fetching metadata with YouTube API...")
+                youtube_details = youtube.get_video_details(video_id)
                 
-                # Retry logic for newly created videos that might not be ready yet
-                max_retries = 3
-                retry_delays = [2, 5, 10]  # seconds
-                ytdlp_details = None
-                
-                # Pass context about expected live status to help with HTML fallback
-                # If event_type is 'live_started', we expect it to be live
-                expected_live = (event_type == 'live_started')
-                
-                for attempt in range(max_retries):
-                    ytdlp_details = ytdlp.get_video_details(video_id, expected_live=expected_live)
+                if youtube_details:
+                    processing_log.append(f"✅ YouTube API: Success")
                     
-                    if ytdlp_details:
-                        processing_log.append(f"✅ yt-dlp: Success")
-                        break  # Success!
-                    
-                    # Retry for any new video that fails (YouTube might not be ready)
-                    if is_new and attempt < max_retries - 1:
-                        delay = retry_delays[attempt]
-                        print(f"    ⏳ Video not ready yet, retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})")
-                        processing_log.append(f"⏳ yt-dlp retry {attempt + 1}/{max_retries}")
-                        time.sleep(delay)
-                    else:
-                        processing_log.append(f"❌ yt-dlp: Failed after {attempt + 1} attempts")
-                        break  # Don't retry on last attempt or for existing videos
-                
-                if ytdlp_details:
                     # Update database with metadata
                     metadata = {
-                        'scheduled_start_time': ytdlp_details.get('scheduled_start_time'),
-                        'live_status': ytdlp_details.get('live_status'),
-                        'duration': ytdlp_details.get('duration_string'),
-                        'view_count': ytdlp_details.get('view_count'),
-                        'like_count': ytdlp_details.get('like_count'),
-                        'is_live': ytdlp_details.get('is_live'),
-                        'was_live': ytdlp_details.get('was_live')
+                        'scheduled_start_time': youtube_details.get('scheduled_start_time'),
+                        'live_status': youtube_details.get('live_status'),
+                        'duration': youtube_details.get('duration'),
+                        'view_count': youtube_details.get('view_count'),
+                        'like_count': youtube_details.get('like_count'),
+                        'is_live': youtube_details.get('is_live'),
+                        'was_live': youtube_details.get('was_live')
                     }
                     db.update_video_metadata(video_id, metadata)
                     
                     # Update video_data with accurate live detection
-                    actual_live_status = ytdlp_details.get('live_status', 'not_live')
+                    actual_live_status = youtube_details.get('live_status', 'not_live')
                     is_actually_live = actual_live_status in ['is_live', 'is_upcoming', 'was_live']
                     
                     print(f"    🔴 Live Status: {actual_live_status}")
                     processing_log.append(f"🔴 Status: {actual_live_status}")
                     
-                    if ytdlp_details.get('scheduled_start_time'):
-                        print(f"    📅 Scheduled: {ytdlp_details['scheduled_start_time']}")
-                        processing_log.append(f"📅 Scheduled: {ytdlp_details['scheduled_start_time']}")
-                    if ytdlp_details.get('duration_string'):
-                        print(f"    ⏱️  Duration: {ytdlp_details['duration_string']}")
-                    if ytdlp_details.get('view_count'):
-                        print(f"    👁️  Views: {ytdlp_details['view_count']:,}")
+                    if youtube_details.get('scheduled_start_time'):
+                        print(f"    📅 Scheduled: {youtube_details['scheduled_start_time']}")
+                        processing_log.append(f"📅 Scheduled: {youtube_details['scheduled_start_time']}")
+                    if youtube_details.get('actual_start_time'):
+                        print(f"    🔴 Started: {youtube_details['actual_start_time']}")
+                    if youtube_details.get('actual_end_time'):
+                        print(f"    ⏹️  Ended: {youtube_details['actual_end_time']}")
+                    if youtube_details.get('view_count'):
+                        print(f"    👁️  Views: {int(youtube_details['view_count']):,}")
                     
-                    # Override title-based detection with yt-dlp data
+                    # Override title-based detection with YouTube API data
                     video_data['is_live_stream'] = is_actually_live
-                    video_data['scheduled_start_time'] = ytdlp_details.get('scheduled_start_time')
+                    video_data['scheduled_start_time'] = youtube_details.get('scheduled_start_time')
                     video_data['live_status'] = actual_live_status
                 else:
-                    print("    ⚠️  Failed to fetch yt-dlp metadata after retries")
-                    processing_log.append("⚠️ Using title-based detection")
+                    print("    ⚠️  Failed to fetch YouTube API metadata")
+                    processing_log.append("❌ YouTube API: Failed")
                     # Keep title-based detection as fallback
                     if video_data.get('is_live_stream'):
                         print("    ℹ️  Using title-based live stream detection as fallback")

@@ -74,12 +74,17 @@ class NotificationRules:
                 return (True, 'upcoming')
             
             # Rule 3: Reschedule notification
-            if already_notified:
+            if not is_new:
                 # Check if scheduled time changed
                 previous_time = self._get_previous_scheduled_time(video_id)
+                
                 if previous_time and previous_time != scheduled_time:
-                    # Rule 2: New time is within 2 hours
+                    # Time changed - send reschedule notification
                     return (True, 'reschedule')
+                elif not already_notified:
+                    # Stream was rescheduled from >2hrs to ≤2hrs (no previous notification)
+                    # This is a new notification opportunity
+                    return (True, 'upcoming')
             
             # Rule 7: Already notified and time hasn't changed
             return (False, None)
