@@ -44,9 +44,17 @@ class YouTubeMetadata:
             is_live = False
             was_live = False
         else:
-            live_status = 'not_live'
-            is_live = False
-            was_live = False
+            # Fallback: Check title for live stream indicators
+            title = api_result.get('title', '').upper()
+            if 'LIVE STREAM' in title or '🔴' in title:
+                # Likely a scheduled stream that YouTube hasn't processed yet
+                live_status = 'is_upcoming'
+                is_live = False
+                was_live = False
+            else:
+                live_status = 'not_live'
+                is_live = False
+                was_live = False
         
         # Return standardized format
         return {
