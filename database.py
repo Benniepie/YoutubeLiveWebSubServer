@@ -7,7 +7,7 @@ from typing import Optional, Dict, List
 import json
 
 class NotificationDB:
-    def __init__(self, db_path='notifications.db'):
+    def __init__(self, db_path='data/notifications.db'):
         self.db_path = db_path
         self.init_db()
     
