@@ -4,6 +4,7 @@ Determines when to send notifications based on live stream timing and status
 """
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
+import json
 
 class NotificationRules:
     """Determine if and what type of notification to send"""
@@ -42,12 +43,24 @@ class NotificationRules:
         # Rule 4: Stream just went live
         if live_status == 'is_live':
             # Check if we already sent a "live_now" notification
-            live_now_sent = any(
-                d['platform'] == 'discord' and 
-                d['status'] == 'success' and
-                'live_now' in d.get('response_data', '')
-                for d in delivery_status
-            )
+            live_now_sent = False
+            for d in delivery_status:
+                if d['platform'] == 'discord' and d['status'] == 'success':
+                    # Parse response_data to check notification_type
+                    try:
+                        resp_data = d.get('response_data')
+                        if resp_data:
+                            resp_json = json.loads(resp_data) if isinstance(resp_data, str) else resp_data
+                            # Check if this was a live_now notification
+                            if isinstance(resp_json, dict) and resp_json.get('notification_type') == 'live_now':
+                                live_now_sent = True
+                                break
+                            # Fallback: check raw string if json parse fails or for older records
+                            if isinstance(resp_data, str) and '"notification_type": "live_now"' in resp_data:
+                                live_now_sent = True
+                                break
+                    except Exception as e:
+                        print(f"Error parsing response data for video {video_id}: {e}")
             
             if not live_now_sent:
                 return (True, 'live_now')
