@@ -26,21 +26,37 @@ flowchart TD
     Lock -- Fail (Timeout) --> Skip[Skip: Concurrent Processing] --> Resp200
     Lock -- Success --> FetchAPI[Fetch YouTube Data API]
 
+    %% API Fields
+    FetchAPI --> APIFields[[Fetched Fields:<br/>scheduled_start_time<br/>actual_start_time<br/>actual_end_time<br/>live_status<br/>is_live_content]]
+    APIFields --> CheckRetry{Is New &amp;<br/>Missing Start Time?}
+
     %% Retry Logic
-    FetchAPI --> CheckRetry{Is New &amp; No Start Time?}
     CheckRetry -- Yes --> ReleaseLock1[Release Lock] --> ScheduleRetry[Schedule Retry 60s] --> Resp200
     CheckRetry -- No --> UpdateDB[(Update Metadata)]
 
-    %% Notification Rules
-    UpdateDB --> CheckLive{Is Live Content?}
-    CheckLive -- No --> LogSkip[Log: Not Live] --> ReleaseLock2
-    CheckLive -- Yes --> Rules{Notification Rules}
+    %% Notification Rules - Expanded
+    UpdateDB --> CheckNotLive{Status == 'not_live'?}
+    CheckNotLive -- Yes --> LogSkip[Log: Not Live] --> ReleaseLock2
+    CheckNotLive -- No --> CheckIsLive{Status == 'is_live'?}
 
-    %% Rule Evaluation
-    Rules -- Live Now --> NotifyLive[Send: LIVE NOW]
-    Rules -- Upcoming &lt; 2h --> NotifyUpcoming[Send: UPCOMING]
-    Rules -- Rescheduled --> NotifyResched[Send: RESCHEDULED]
-    Rules -- Ignore/Duplicate --> LogIgnore[Log: No Notification]
+    %% Live Now Path
+    CheckIsLive -- Yes --> CheckLiveSent{Already sent<br/>'live_now'?}
+    CheckLiveSent -- Yes --> LogDuplicate1[Log: Duplicate] --> ReleaseLock2
+    CheckLiveSent -- No --> NotifyLive[Send: LIVE NOW]
+
+    %% Upcoming/Reschedule Path
+    CheckIsLive -- No --> CheckUpcoming{Status == 'is_upcoming'?}
+    CheckUpcoming -- No --> LogSkip
+    CheckUpcoming -- Yes --> CheckWindow{Starts in < 2h?}
+
+    CheckWindow -- No --> LogWait[Log: > 2h (Wait)] --> ReleaseLock2
+    CheckWindow -- Yes --> CheckResched{Time Changed?}
+
+    CheckResched -- Yes --> NotifyResched[Send: RESCHEDULED]
+    CheckResched -- No --> CheckNewUpcoming{Is New OR<br/>Not Notified?}
+
+    CheckNewUpcoming -- Yes --> NotifyUpcoming[Send: UPCOMING]
+    CheckNewUpcoming -- No --> LogDuplicate2[Log: Duplicate] --> ReleaseLock2
 
     %% Action
     NotifyLive --> SendDiscord[Send to Discord]
@@ -49,10 +65,8 @@ flowchart TD
 
     %% Finalization
     SendDiscord --> LogDelivery[(Log Delivery Status)] --> DebugTel
-    LogIgnore --> DebugTel[Send Debug Telegram]
-    LogSkip --> DebugTel
 
-    DebugTel --> ReleaseLock2[Release Lock] --> Resp200
+    DebugTel[Send Debug Telegram] --> ReleaseLock2[Release Lock] --> Resp200
 
     %% Styling
     style Start fill:#f9f,stroke:#333,stroke-width:2px
@@ -63,9 +77,10 @@ flowchart TD
     style UpdateDB fill:#ccf,stroke:#333,stroke-width:2px
     style LogDelivery fill:#ccf,stroke:#333,stroke-width:2px
     style SendDiscord fill:#7289da,stroke:#333,stroke-width:2px,color:#fff
+    style APIFields fill:#ff9,stroke:#333,stroke-width:2px
 ```
 
-## detailed Steps
+## Detailed Steps
 
 1.  **Webhook Verification**:
     *   The server receives a `POST` request at `/webhook`.
@@ -86,15 +101,21 @@ flowchart TD
     *   If the lock cannot be acquired (e.g., another request for the same video is processing), the request is skipped to prevent race conditions.
 
 5.  **Metadata Fetch & Retry**:
-    *   The system queries the **YouTube Data API** for full details (`liveStreamingDetails`, `snippet`).
+    *   The system queries the **YouTube Data API** for full details.
+    *   **Fields Fetched**: `scheduled_start_time`, `actual_start_time`, `actual_end_time`, `live_status`, `is_live_content`, etc.
     *   **Retry Logic**: If it's a *new* video but the API doesn't have `scheduled_start_time` yet (common race condition), the system waits 60 seconds and retries.
 
-6.  **Notification Rules**:
-    *   The system evaluates if a notification should be sent based on:
-        *   **Live Status**: Must be `is_live`, `is_upcoming`, or `was_live`.
-        *   **Timing**: Upcoming streams are only notified if they start within **2 hours**.
-        *   **History**: Checks the `delivery_tracking` table to prevent duplicate notifications.
-        *   **Rescheduling**: Detects if a scheduled time has changed significantly.
+6.  **Notification Rules (Expanded Decision Tree)**:
+    *   **Is it Live Content?** If status is `not_live`, ignore.
+    *   **Is it LIVE NOW?** (`is_live`)
+        *   **Already Sent?** Check DB if 'live_now' notification succeeded.
+        *   **Yes** -> Ignore (Duplicate).
+        *   **No** -> **Send LIVE NOW**.
+    *   **Is it UPCOMING?** (`is_upcoming`)
+        *   **Starts < 2 Hours?** If > 2 hours, ignore (wait for later notification).
+        *   **Time Changed?** If scheduled time differs from DB -> **Send RESCHEDULED**.
+        *   **Is New/Unsent?** If it's a new video OR never successfully notified -> **Send UPCOMING**.
+        *   Otherwise -> Ignore (Duplicate).
 
 7.  **Dispatch**:
     *   **Discord**: Sends a rich embed to the configured Webhook.
