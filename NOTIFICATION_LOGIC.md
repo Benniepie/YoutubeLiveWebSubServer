@@ -69,14 +69,14 @@ flowchart TD
     DebugTel[Send Debug Telegram] --> ReleaseLock2[Release Lock] --> Resp200
 
     %% Styling
-    style Start fill:#f9f,stroke:#333,stroke-width:2px
-    style Resp200 fill:#9f9,stroke:#333,stroke-width:2px
-    style Resp403 fill:#f99,stroke:#333,stroke-width:2px
-    style Resp400 fill:#f99,stroke:#333,stroke-width:2px
-    style SaveDB fill:#ccf,stroke:#333,stroke-width:2px
-    style UpdateDB fill:#ccf,stroke:#333,stroke-width:2px
-    style LogDelivery fill:#ccf,stroke:#333,stroke-width:2px
-    style SendDiscord fill:#7289da,stroke:#333,stroke-width:2px,color:#fff
+    style Start fill:#f9f,stroke:#333,stroke-width:2px,color:#000
+    style Resp200 fill:#9f9,stroke:#333,stroke-width:2px,color:#000
+    style Resp403 fill:#f99,stroke:#333,stroke-width:2px,color:#000
+    style Resp400 fill:#f99,stroke:#333,stroke-width:2px,color:#000
+    style SaveDB fill:#ccf,stroke:#333,stroke-width:2px,color:#000
+    style UpdateDB fill:#ccf,stroke:#333,stroke-width:2px,color:#000
+    style LogDelivery fill:#ccf,stroke:#333,stroke-width:2px,color:#000
+    style SendDiscord fill:#7289da,stroke:#333,stroke-width:2px,color:#000
     style APIFields fill:#fff,stroke:#333,stroke-width:2px,color:#000
 ```
 
