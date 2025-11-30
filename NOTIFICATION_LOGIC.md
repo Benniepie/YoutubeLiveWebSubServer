@@ -49,7 +49,7 @@ flowchart TD
     CheckUpcoming -- No --> LogSkip
     CheckUpcoming -- Yes --> CheckWindow{Starts in < 2h?}
 
-    CheckWindow -- No --> LogWait[Log: > 2h (Wait)] --> ReleaseLock2
+    CheckWindow -- No --> LogWait[Log: > 2h Wait] --> ReleaseLock2
     CheckWindow -- Yes --> CheckResched{Time Changed?}
 
     CheckResched -- Yes --> NotifyResched[Send: RESCHEDULED]
