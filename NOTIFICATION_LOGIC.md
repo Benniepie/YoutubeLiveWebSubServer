@@ -77,7 +77,7 @@ flowchart TD
     style UpdateDB fill:#ccf,stroke:#333,stroke-width:2px
     style LogDelivery fill:#ccf,stroke:#333,stroke-width:2px
     style SendDiscord fill:#7289da,stroke:#333,stroke-width:2px,color:#fff
-    style APIFields fill:#ff9,stroke:#333,stroke-width:2px
+    style APIFields fill:#fff,stroke:#333,stroke-width:2px,color:#000
 ```
 
 ## Detailed Steps
