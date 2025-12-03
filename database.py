@@ -254,7 +254,7 @@ class NotificationDB:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT platform, delivered_at, status, error_message
+            SELECT platform, delivered_at, status, error_message, response_data
             FROM delivery_tracking
             WHERE video_id = ?
             ORDER BY delivered_at DESC
