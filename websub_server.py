@@ -7,7 +7,7 @@ import requests
 import xml.etree.ElementTree as ET
 from flask import Flask, request, Response
 from database import NotificationDB
-from notifiers import DiscordNotifier, WhatsAppNotifier, FacebookNotifier, EmailNotifier
+from notifiers import DiscordNotifier, WhatsAppNotifier, FacebookNotifier, EmailNotifier, PostizNotifier
 from youtube_metadata import YouTubeMetadata
 from notification_rules import NotificationRules
 from security import require_google_ip, rate_limit
@@ -37,6 +37,7 @@ discord = DiscordNotifier()
 whatsapp = WhatsAppNotifier()
 facebook = FacebookNotifier()
 email = EmailNotifier()
+postiz = PostizNotifier()
 youtube = YouTubeMetadata()
 notification_rules = NotificationRules(db)
 
@@ -53,6 +54,48 @@ def get_video_lock(video_id):
         if video_id not in video_locks:
             video_locks[video_id] = threading.Lock()
         return video_locks[video_id]
+
+def trigger_postiz(video_data):
+    """
+    Trigger Postiz notifications if not already sent.
+    """
+    video_id = video_data['video_id']
+    print(f"  - Checking Postiz for video {video_id}...")
+    
+    # Check delivery status to avoid duplicates
+    delivery_status = db.get_delivery_status(video_id)
+    already_processed = any(d['platform'].startswith('postiz') for d in delivery_status)
+    
+    if already_processed:
+        print(f"    ℹ️  Postiz already processed for {video_id}. Skipping.")
+        return
+
+    print(f"  - Sending Postiz notifications for {video_id}...")
+    try:
+        results = postiz.send_notification(video_data)
+        
+        for platform, result in results.items():
+            status = 'success' if result['success'] else 'failed'
+            error = result.get('error')
+            response = result.get('response')
+            
+            db.mark_delivered(
+                video_id, 
+                f"postiz_{platform}", 
+                status, 
+                response, 
+                error
+            )
+            
+            if status == 'success':
+                print(f"    ✅ Postiz ({platform}): Sent")
+            else:
+                print(f"    ❌ Postiz ({platform}): Failed - {error}")
+                
+    except Exception as e:
+        print(f"    ❌ Postiz Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 # --- Core Logic ---
 def process_video_event(video_data, raw_xml, event_type, is_new, retry_count=0):
@@ -137,6 +180,17 @@ def process_video_event(video_data, raw_xml, event_type, is_new, retry_count=0):
             video_data['is_live_stream'] = is_actually_live
             video_data['scheduled_start_time'] = youtube_details.get('scheduled_start_time')
             video_data['live_status'] = actual_live_status
+
+            # --- Postiz Integration ---
+            # Post both live & non-live streams, but only once per video.
+            # We wait for the "second check" (approx 60s) to ensure metadata is stable.
+            if is_new:
+                if retry_count == 0:
+                    print("  - Scheduling Postiz notification check in 60 seconds...")
+                    threading.Timer(60.0, trigger_postiz, args=[video_data]).start()
+                else:
+                    # We are in the retry/second check, so trigger immediately
+                    trigger_postiz(video_data)
         else:
             print("    ⚠️  Failed to fetch YouTube API metadata")
             processing_log.append("❌ YouTube API: Failed")

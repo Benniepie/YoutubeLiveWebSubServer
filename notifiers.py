@@ -248,3 +248,374 @@ class EmailNotifier:
             'success': False,
             'error': 'Email/Ghost integration not yet implemented'
         }
+
+
+class PostizNotifier:
+    """Send notifications to Postiz (multi-platform social media manager)"""
+
+    def __init__(self):
+        self.api_base = os.environ.get('POSTIZ_API_BASE')
+        self.api_key = os.environ.get('POSTIZ_API_KEY')
+        self.api_type = os.environ.get('POSTIZ_API_TYPE', 'schedule')
+        self.api_date = os.environ.get('POSTIZ_API_DATE')
+        
+        # Enabled platforms
+        self.platforms = {
+            'facebook': os.environ.get('POSTIZ_FACEBOOK', 'false').lower() == 'true',
+            'telegram': os.environ.get('POSTIZ_TELEGRAM', 'false').lower() == 'true',
+            'instagram': os.environ.get('POSTIZ_INSTAGRAM', 'false').lower() == 'true',
+            'bluesky': os.environ.get('POSTIZ_BLUESKY', 'false').lower() == 'true',
+            'x': os.environ.get('POSTIZ_X', 'false').lower() == 'true',
+            'threads': os.environ.get('POSTIZ_THREADS', 'false').lower() == 'true'
+        }
+        
+        self._integrations_map = {
+            'bluesky': os.environ.get('POSTIZ_API_ID_BLUESKY'),
+            'facebook': os.environ.get('POSTIZ_API_ID_FACEBOOK'),
+            'instagram': os.environ.get('POSTIZ_API_ID_INSTAGRAM'),
+            'telegram': os.environ.get('POSTIZ_API_ID_TELEGRAM'),
+            'threads': os.environ.get('POSTIZ_API_ID_THREADS'),
+            'x': os.environ.get('POSTIZ_API_ID_X')
+        }
+        # Remove None values
+        self._integrations_map = {k: v for k, v in self._integrations_map.items() if v}
+
+    def _get_integrations(self) -> Dict[str, str]:
+        """Fetch and cache integrations map: {identifier: id}"""
+        # If we have all enabled platforms in our map (from env), we don't need to fetch
+        enabled_platforms = [p for p, enabled in self.platforms.items() if enabled]
+        missing_platforms = [p for p in enabled_platforms if p not in self._integrations_map]
+        
+        if not missing_platforms:
+            return self._integrations_map
+
+        url = f"{self.api_base}/integrations"
+        headers = {
+            'Authorization': f'{self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Map identifier to ID (e.g., 'facebook' -> 'integration-id')
+            # Only update if not already set via env
+            for item in data:
+                ident = item['identifier']
+                # Handle instagram-standalone mapping to instagram if needed
+                if ident == 'instagram-standalone' and 'instagram' not in self._integrations_map:
+                     self._integrations_map['instagram'] = item['id']
+                elif ident not in self._integrations_map:
+                    self._integrations_map[ident] = item['id']
+            
+            return self._integrations_map
+        except Exception as e:
+            print(f"Error fetching Postiz integrations: {e}")
+            return self._integrations_map
+
+    def _upload_file(self, file_url: str) -> Optional[Dict]:
+        """Upload a file from URL to Postiz and return file object {id, path}"""
+        url = f"{self.api_base}/upload-from-url"
+        headers = {
+            'Authorization': f'{self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        try:
+            response = requests.post(url, json={'url': file_url}, headers=headers)
+            response.raise_for_status()
+            return response.json() # Returns {id, path, ...}
+        except Exception as e:
+            print(f"Error uploading file to Postiz: {e}")
+            return None
+
+    def send_notification(self, video_data: Dict) -> Dict:
+        """
+        Send notifications to all enabled platforms via Postiz.
+        Returns a summary of results.
+        """
+        if not self.api_base or not self.api_key:
+            return {'success': False, 'error': 'Postiz configuration missing'}
+
+        # Fetch integrations first
+        integrations = self._get_integrations()
+        if not integrations:
+            return {'success': False, 'error': 'Could not fetch Postiz integrations'}
+
+        results = {}
+        
+        # Determine schedule date
+        schedule_date = self.api_date
+        if not schedule_date:
+            schedule_date = video_data.get('published_time')
+        
+        # Upload thumbnail once if needed
+        thumbnail_url = f"https://img.youtube.com/vi/{video_data['video_id']}/maxresdefault.jpg"
+        uploaded_image = self._upload_file(thumbnail_url)
+        
+        if not uploaded_image:
+             print("Warning: Failed to upload thumbnail to Postiz. Posts requiring images may fail or lack visuals.")
+
+        # Common headers
+        headers = {
+            'Authorization': f'{self.api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        # 1. Facebook
+        if self.platforms['facebook']:
+            if 'facebook' in integrations:
+                results['facebook'] = self._post_facebook(
+                    video_data, headers, schedule_date, integrations['facebook']
+                )
+            else:
+                results['facebook'] = {'success': False, 'error': 'No Facebook integration found'}
+
+        # 2. Telegram
+        if self.platforms['telegram']:
+            if 'telegram' in integrations:
+                results['telegram'] = self._post_telegram(
+                    video_data, headers, schedule_date, integrations['telegram'], uploaded_image
+                )
+            else:
+                results['telegram'] = {'success': False, 'error': 'No Telegram integration found'}
+
+        # 3. Instagram
+        if self.platforms['instagram']:
+            # Check for 'instagram' or 'instagram-standalone'
+            ig_id = integrations.get('instagram') or integrations.get('instagram-standalone')
+            if ig_id:
+                results['instagram'] = self._post_instagram(
+                    video_data, headers, schedule_date, ig_id, uploaded_image
+                )
+            else:
+                results['instagram'] = {'success': False, 'error': 'No Instagram integration found'}
+
+        # 4. Blue Sky
+        if self.platforms['bluesky']:
+            if 'bluesky' in integrations:
+                results['bluesky'] = self._post_bluesky(
+                    video_data, headers, schedule_date, integrations['bluesky'], uploaded_image
+                )
+            else:
+                results['bluesky'] = {'success': False, 'error': 'No Blue Sky integration found'}
+
+        # 5. X (Twitter)
+        if self.platforms['x']:
+            if 'x' in integrations:
+                results['x'] = self._post_x(
+                    video_data, headers, schedule_date, integrations['x'], uploaded_image
+                )
+            else:
+                results['x'] = {'success': False, 'error': 'No X integration found'}
+
+        # 6. Threads
+        if self.platforms['threads']:
+            if 'threads' in integrations:
+                results['threads'] = self._post_threads(
+                    video_data, headers, schedule_date, integrations['threads'], uploaded_image
+                )
+            else:
+                results['threads'] = {'success': False, 'error': 'No Threads integration found'}
+
+        return results
+
+    def _post_facebook(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str) -> Dict:
+        content = "A new video has been added by ATP Geopolitics"
+        
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": content,
+                            "image": []
+                        }
+                    ],
+                    "settings": {
+                        "__type": "facebook",
+                        "url": video_data['video_url']
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "facebook")
+
+    def _post_telegram(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
+        content = f"A new video has been added by ATP Geopolitics\n{video_data['video_url']}"
+        
+        image_data = []
+        if image:
+            image_data = [{"id": image['id'], "path": image['path']}]
+
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": content,
+                            "image": image_data
+                        }
+                    ],
+                    "settings": {
+                        "__type": "telegram"
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "telegram")
+
+    def _post_instagram(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
+        caption = f"New YouTube Video: {video_data['title']}\nYouTube.com/@atpgeo\nlink in bio"
+        
+        image_data = []
+        if image:
+            image_data = [{"id": image['id'], "path": image['path']}]
+            
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": caption,
+                            "image": image_data
+                        }
+                    ],
+                    "settings": {
+                        "__type": "instagram",
+                        "post_type": "post",
+                        "collaborators": []
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "instagram")
+
+    def _post_bluesky(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
+        content = f"New YouTube Video: {video_data['title']}\n{video_data['video_url']}"
+        
+        image_data = []
+        if image:
+            image_data = [{"id": image['id'], "path": image['path']}]
+        
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": content,
+                            "image": image_data
+                        }
+                    ],
+                    "settings": {
+                        "__type": "bluesky"
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "bluesky")
+
+    def _post_x(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
+        # Tweet 1: Content + Image + (1/2)
+        content_1 = f"New YouTube Video: {video_data['title']} (1/2)"
+        
+        # Tweet 2: URL + (2/2)
+        content_2 = f"{video_data['video_url']} (2/2)"
+        
+        image_data = []
+        if image:
+            image_data = [{"id": image['id'], "path": image['path']}]
+
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": content_1,
+                            "image": image_data
+                        },
+                        {
+                            "content": content_2,
+                            "image": []
+                        }
+                    ],
+                    "settings": {
+                        "__type": "x",
+                        "who_can_reply_post": "everyone"
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "x")
+
+    def _post_threads(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
+        content = f"New Youtube Video: {video_data['title']}\n{video_data['video_url']}"
+        
+        image_data = []
+        if image:
+            image_data = [{"id": image['id'], "path": image['path']}]
+        
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": content,
+                            "image": image_data
+                        }
+                    ],
+                    "settings": {
+                        "__type": "threads"
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "threads")
+
+    def _send_request(self, payload: Dict, headers: Dict, platform: str) -> Dict:
+        url = f"{self.api_base}/posts"
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            return {
+                'success': True,
+                'response': response.json()
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
