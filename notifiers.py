@@ -5,7 +5,10 @@ import os
 import requests
 from typing import Dict, Optional
 from datetime import datetime
+from io import BytesIO
 from dotenv import load_dotenv
+import image_utils
+import post_templates
 
 # Load environment variables
 load_dotenv(override=True)
@@ -266,7 +269,8 @@ class PostizNotifier:
             'instagram': os.environ.get('POSTIZ_INSTAGRAM', 'false').lower() == 'true',
             'bluesky': os.environ.get('POSTIZ_BLUESKY', 'false').lower() == 'true',
             'x': os.environ.get('POSTIZ_X', 'false').lower() == 'true',
-            'threads': os.environ.get('POSTIZ_THREADS', 'false').lower() == 'true'
+            'threads': os.environ.get('POSTIZ_THREADS', 'false').lower() == 'true',
+            'reddit': os.environ.get('POSTIZ_REDDIT', 'false').lower() == 'true'
         }
         
         self._integrations_map = {
@@ -275,7 +279,8 @@ class PostizNotifier:
             'instagram': os.environ.get('POSTIZ_API_ID_INSTAGRAM'),
             'telegram': os.environ.get('POSTIZ_API_ID_TELEGRAM'),
             'threads': os.environ.get('POSTIZ_API_ID_THREADS'),
-            'x': os.environ.get('POSTIZ_API_ID_X')
+            'x': os.environ.get('POSTIZ_API_ID_X'),
+            'reddit': os.environ.get('POSTIZ_API_ID_REDDIT')
         }
         # Remove None values
         self._integrations_map = {k: v for k, v in self._integrations_map.items() if v}
@@ -315,7 +320,7 @@ class PostizNotifier:
             print(f"Error fetching Postiz integrations: {e}")
             return self._integrations_map
 
-    def _upload_file(self, file_url: str) -> Optional[Dict]:
+    def _upload_file_from_url(self, file_url: str) -> Optional[Dict]:
         """Upload a file from URL to Postiz and return file object {id, path}"""
         url = f"{self.api_base}/upload-from-url"
         headers = {
@@ -328,7 +333,27 @@ class PostizNotifier:
             response.raise_for_status()
             return response.json() # Returns {id, path, ...}
         except Exception as e:
-            print(f"Error uploading file to Postiz: {e}")
+            print(f"Error uploading file from URL to Postiz: {e}")
+            return None
+
+    def _upload_file_bytes(self, file_bytes: BytesIO, filename: str) -> Optional[Dict]:
+        """Upload a file from memory to Postiz."""
+        url = f"{self.api_base}/upload"
+        headers = {
+            'Authorization': f'{self.api_key}'
+        }
+        
+        file_bytes.seek(0)
+        files = {
+            'file': (filename, file_bytes, 'image/jpeg')
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, files=files)
+            response.raise_for_status()
+            return response.json() # Returns {id, path, ...}
+        except Exception as e:
+            print(f"Error uploading bytes to Postiz: {e}")
             return None
 
     def send_notification(self, video_data: Dict) -> Dict:
@@ -351,12 +376,35 @@ class PostizNotifier:
         if not schedule_date:
             schedule_date = video_data.get('published_time')
         
-        # Upload thumbnail once if needed
+        # --- Image Processing ---
         thumbnail_url = f"https://img.youtube.com/vi/{video_data['video_id']}/maxresdefault.jpg"
-        uploaded_image = self._upload_file(thumbnail_url)
         
-        if not uploaded_image:
-             print("Warning: Failed to upload thumbnail to Postiz. Posts requiring images may fail or lack visuals.")
+        # Download Original
+        original_bytes = image_utils.download_image(thumbnail_url)
+        
+        flair_key = None
+        original_image_obj = None
+        ig_image_obj = None
+        
+        if original_bytes:
+            # Detect Flair
+            flair_key = image_utils.detect_flair_from_image(original_bytes)
+            
+            # Upload Original (for FB, X)
+            # Only needed if FB or X are enabled
+            if self.platforms['facebook'] or self.platforms['x']:
+                original_image_obj = self._upload_file_bytes(original_bytes, "thumbnail.jpg")
+            
+            # Create & Upload IG Thumbnail (for Instagram)
+            if self.platforms['instagram']:
+                ig_bytes = image_utils.create_instagram_thumbnail(original_bytes)
+                if ig_bytes:
+                    ig_image_obj = self._upload_file_bytes(ig_bytes, "ig_thumbnail.jpg")
+        else:
+            # Fallback: Upload from URL if download failed
+            print("Warning: Failed to download thumbnail. Using URL fallback (no flair/IG resize).")
+            if self.platforms['facebook'] or self.platforms['x']:
+                original_image_obj = self._upload_file_from_url(thumbnail_url)
 
         # Common headers
         headers = {
@@ -368,7 +416,7 @@ class PostizNotifier:
         if self.platforms['facebook']:
             if 'facebook' in integrations:
                 results['facebook'] = self._post_facebook(
-                    video_data, headers, schedule_date, integrations['facebook']
+                    video_data, headers, schedule_date, integrations['facebook'], flair_key, original_image_obj
                 )
             else:
                 results['facebook'] = {'success': False, 'error': 'No Facebook integration found'}
@@ -377,7 +425,7 @@ class PostizNotifier:
         if self.platforms['telegram']:
             if 'telegram' in integrations:
                 results['telegram'] = self._post_telegram(
-                    video_data, headers, schedule_date, integrations['telegram'], uploaded_image
+                    video_data, headers, schedule_date, integrations['telegram'], flair_key
                 )
             else:
                 results['telegram'] = {'success': False, 'error': 'No Telegram integration found'}
@@ -388,7 +436,7 @@ class PostizNotifier:
             ig_id = integrations.get('instagram') or integrations.get('instagram-standalone')
             if ig_id:
                 results['instagram'] = self._post_instagram(
-                    video_data, headers, schedule_date, ig_id, uploaded_image
+                    video_data, headers, schedule_date, ig_id, flair_key, ig_image_obj
                 )
             else:
                 results['instagram'] = {'success': False, 'error': 'No Instagram integration found'}
@@ -397,7 +445,7 @@ class PostizNotifier:
         if self.platforms['bluesky']:
             if 'bluesky' in integrations:
                 results['bluesky'] = self._post_bluesky(
-                    video_data, headers, schedule_date, integrations['bluesky'], uploaded_image
+                    video_data, headers, schedule_date, integrations['bluesky'], flair_key
                 )
             else:
                 results['bluesky'] = {'success': False, 'error': 'No Blue Sky integration found'}
@@ -406,7 +454,7 @@ class PostizNotifier:
         if self.platforms['x']:
             if 'x' in integrations:
                 results['x'] = self._post_x(
-                    video_data, headers, schedule_date, integrations['x'], uploaded_image
+                    video_data, headers, schedule_date, integrations['x'], flair_key, original_image_obj
                 )
             else:
                 results['x'] = {'success': False, 'error': 'No X integration found'}
@@ -415,15 +463,24 @@ class PostizNotifier:
         if self.platforms['threads']:
             if 'threads' in integrations:
                 results['threads'] = self._post_threads(
-                    video_data, headers, schedule_date, integrations['threads'], uploaded_image
+                    video_data, headers, schedule_date, integrations['threads'], flair_key
                 )
             else:
                 results['threads'] = {'success': False, 'error': 'No Threads integration found'}
 
+        # 7. Reddit
+        if self.platforms['reddit']:
+            if 'reddit' in integrations:
+                results['reddit'] = self._post_reddit(
+                    video_data, headers, schedule_date, integrations['reddit'], flair_key
+                )
+            else:
+                results['reddit'] = {'success': False, 'error': 'No Reddit integration found'}
+
         return results
 
-    def _post_facebook(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str) -> Dict:
-        content = "A new video has been added by ATP Geopolitics"
+    def _post_facebook(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str], image: Optional[Dict]) -> Dict:
+        content_data = post_templates.build_post_content('facebook', video_data, flair_key)
         
         payload = {
             "type": self.api_type,
@@ -435,8 +492,12 @@ class PostizNotifier:
                     "integration": { "id": integration_id },
                     "value": [
                         {
-                            "content": content,
-                            "image": []
+                            "content": content_data['content'],
+                            "image": [] # Facebook Link Post doesn't use image array usually, it scrapes URL. But user asked for image?
+                            # User originally asked for "Post with link" which scrapes.
+                            # If we want to force an image, we'd use "Post with image".
+                            # But user requirement: "Post 'A new video...' with the YouTube video URL in the url parameter."
+                            # So we stick to Link Post. Image obj is unused here but passed for consistency.
                         }
                     ],
                     "settings": {
@@ -448,13 +509,10 @@ class PostizNotifier:
         }
         return self._send_request(payload, headers, "facebook")
 
-    def _post_telegram(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
-        content = f"A new video has been added by ATP Geopolitics\n{video_data['video_url']}"
+    def _post_telegram(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str]) -> Dict:
+        content_data = post_templates.build_post_content('telegram', video_data, flair_key)
         
-        image_data = []
-        if image:
-            image_data = [{"id": image['id'], "path": image['path']}]
-
+        # No image for Telegram (Link Preview)
         payload = {
             "type": self.api_type,
             "date": schedule_date,
@@ -465,8 +523,8 @@ class PostizNotifier:
                     "integration": { "id": integration_id },
                     "value": [
                         {
-                            "content": content,
-                            "image": image_data
+                            "content": content_data['content'],
+                            "image": []
                         }
                     ],
                     "settings": {
@@ -477,8 +535,8 @@ class PostizNotifier:
         }
         return self._send_request(payload, headers, "telegram")
 
-    def _post_instagram(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
-        caption = f"New YouTube Video: {video_data['title']}\nYouTube.com/@atpgeo\nlink in bio"
+    def _post_instagram(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str], image: Optional[Dict]) -> Dict:
+        content_data = post_templates.build_post_content('instagram', video_data, flair_key)
         
         image_data = []
         if image:
@@ -494,7 +552,7 @@ class PostizNotifier:
                     "integration": { "id": integration_id },
                     "value": [
                         {
-                            "content": caption,
+                            "content": content_data['content'],
                             "image": image_data
                         }
                     ],
@@ -508,13 +566,10 @@ class PostizNotifier:
         }
         return self._send_request(payload, headers, "instagram")
 
-    def _post_bluesky(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
-        content = f"New YouTube Video: {video_data['title']}\n{video_data['video_url']}"
+    def _post_bluesky(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str]) -> Dict:
+        content_data = post_templates.build_post_content('bluesky', video_data, flair_key)
         
-        image_data = []
-        if image:
-            image_data = [{"id": image['id'], "path": image['path']}]
-        
+        # No image for Blue Sky (Embed issue)
         payload = {
             "type": self.api_type,
             "date": schedule_date,
@@ -525,8 +580,8 @@ class PostizNotifier:
                     "integration": { "id": integration_id },
                     "value": [
                         {
-                            "content": content,
-                            "image": image_data
+                            "content": content_data['content'],
+                            "image": []
                         }
                     ],
                     "settings": {
@@ -537,12 +592,8 @@ class PostizNotifier:
         }
         return self._send_request(payload, headers, "bluesky")
 
-    def _post_x(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
-        # Tweet 1: Content + Image + (1/2)
-        content_1 = f"New YouTube Video: {video_data['title']} (1/2)"
-        
-        # Tweet 2: URL + (2/2)
-        content_2 = f"{video_data['video_url']} (2/2)"
+    def _post_x(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str], image: Optional[Dict]) -> Dict:
+        content_data = post_templates.build_post_content('twitter', video_data, flair_key)
         
         image_data = []
         if image:
@@ -558,11 +609,11 @@ class PostizNotifier:
                     "integration": { "id": integration_id },
                     "value": [
                         {
-                            "content": content_1,
+                            "content": content_data['tweet1'],
                             "image": image_data
                         },
                         {
-                            "content": content_2,
+                            "content": content_data['tweet2'],
                             "image": []
                         }
                     ],
@@ -575,13 +626,10 @@ class PostizNotifier:
         }
         return self._send_request(payload, headers, "x")
 
-    def _post_threads(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, image: Optional[Dict]) -> Dict:
-        content = f"New Youtube Video: {video_data['title']}\n{video_data['video_url']}"
+    def _post_threads(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str]) -> Dict:
+        content_data = post_templates.build_post_content('threads', video_data, flair_key)
         
-        image_data = []
-        if image:
-            image_data = [{"id": image['id'], "path": image['path']}]
-        
+        # No image for Threads (Link Preview)
         payload = {
             "type": self.api_type,
             "date": schedule_date,
@@ -592,8 +640,8 @@ class PostizNotifier:
                     "integration": { "id": integration_id },
                     "value": [
                         {
-                            "content": content,
-                            "image": image_data
+                            "content": content_data['content'],
+                            "image": []
                         }
                     ],
                     "settings": {
@@ -603,6 +651,49 @@ class PostizNotifier:
             ]
         }
         return self._send_request(payload, headers, "threads")
+
+    def _post_reddit(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str]) -> Dict:
+        content_data = post_templates.build_post_content('reddit', video_data, flair_key)
+        
+        # Reddit Native Embed
+        subreddit_settings = {
+            "subreddit": "atpgeo", # Hardcoded per user example, or could be env var? User said "atpgeo" in example.
+            "title": content_data['title'],
+            "type": "link",
+            "url": content_data['url'],
+            "is_flair_required": False
+        }
+        
+        if content_data['flair_id']:
+            subreddit_settings["is_flair_required"] = True
+            subreddit_settings["flair"] = { "id": content_data['flair_id'] }
+
+        payload = {
+            "type": self.api_type,
+            "date": schedule_date,
+            "shortLink": False,
+            "tags": [],
+            "posts": [
+                {
+                    "integration": { "id": integration_id },
+                    "value": [
+                        {
+                            "content": content_data['content'],
+                            "image": []
+                        }
+                    ],
+                    "settings": {
+                        "__type": "reddit",
+                        "subreddit": [
+                            {
+                                "value": subreddit_settings
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        return self._send_request(payload, headers, "reddit")
 
     def _send_request(self, payload: Dict, headers: Dict, platform: str) -> Dict:
         url = f"{self.api_base}/posts"

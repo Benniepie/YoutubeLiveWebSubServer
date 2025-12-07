@@ -180,6 +180,7 @@ def process_video_event(video_data, raw_xml, event_type, is_new, retry_count=0):
             video_data['is_live_stream'] = is_actually_live
             video_data['scheduled_start_time'] = youtube_details.get('scheduled_start_time')
             video_data['live_status'] = actual_live_status
+            video_data['description'] = youtube_details.get('description')
 
             # --- Postiz Integration ---
             # Post both live & non-live streams, but only once per video.
