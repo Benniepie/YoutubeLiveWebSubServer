@@ -390,9 +390,9 @@ class PostizNotifier:
             # Detect Flair
             flair_key = image_utils.detect_flair_from_image(original_bytes)
             
-            # Upload Original (for FB, X)
-            # Only needed if FB or X are enabled
-            if self.platforms['facebook'] or self.platforms['x']:
+            # Upload Original (for FB, X, Bluesky)
+            # Only needed if FB, X, or Bluesky are enabled
+            if self.platforms['facebook'] or self.platforms['x'] or self.platforms['bluesky']:
                 original_image_obj = self._upload_file_bytes(original_bytes, "thumbnail.jpg")
             
             # Create & Upload IG Thumbnail (for Instagram)
@@ -403,7 +403,7 @@ class PostizNotifier:
         else:
             # Fallback: Upload from URL if download failed
             print("Warning: Failed to download thumbnail. Using URL fallback (no flair/IG resize).")
-            if self.platforms['facebook'] or self.platforms['x']:
+            if self.platforms['facebook'] or self.platforms['x'] or self.platforms['bluesky']:
                 original_image_obj = self._upload_file_from_url(thumbnail_url)
 
         # Common headers
@@ -445,7 +445,7 @@ class PostizNotifier:
         if self.platforms['bluesky']:
             if 'bluesky' in integrations:
                 results['bluesky'] = self._post_bluesky(
-                    video_data, headers, schedule_date, integrations['bluesky'], flair_key
+                    video_data, headers, schedule_date, integrations['bluesky'], flair_key, original_image_obj
                 )
             else:
                 results['bluesky'] = {'success': False, 'error': 'No Blue Sky integration found'}
@@ -566,10 +566,13 @@ class PostizNotifier:
         }
         return self._send_request(payload, headers, "instagram")
 
-    def _post_bluesky(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str]) -> Dict:
+    def _post_bluesky(self, video_data: Dict, headers: Dict, schedule_date: str, integration_id: str, flair_key: Optional[str], image: Optional[Dict]) -> Dict:
         content_data = post_templates.build_post_content('bluesky', video_data, flair_key)
         
-        # No image for Blue Sky (Embed issue)
+        image_data = []
+        if image:
+            image_data = [{"id": image['id'], "path": image['path']}]
+        
         payload = {
             "type": self.api_type,
             "date": schedule_date,
@@ -581,7 +584,7 @@ class PostizNotifier:
                     "value": [
                         {
                             "content": content_data['content'],
-                            "image": []
+                            "image": image_data
                         }
                     ],
                     "settings": {
