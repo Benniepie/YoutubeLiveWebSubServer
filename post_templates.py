@@ -80,13 +80,13 @@ def build_post_content(platform: str, video_data: Dict, flair_key: Optional[str]
     # 1. Hashtags
     hashtags = extract_hashtags(description, max_count=5)
     
-    # Add Category Hashtag
-    if flair_key and flair_key in CATEGORY_HASHTAGS:
-        hashtags.append(CATEGORY_HASHTAGS[flair_key])
-        
-    # Add Live Hashtag
+    # Add Live Hashtag (Append)
     if is_live:
         hashtags.append("#livestream")
+
+    # Add Category Hashtag (Prepend - First in list)
+    if flair_key and flair_key in CATEGORY_HASHTAGS:
+        hashtags.insert(0, CATEGORY_HASHTAGS[flair_key])
         
     hashtag_str = " ".join(hashtags)
     
@@ -108,40 +108,43 @@ def build_post_content(platform: str, video_data: Dict, flair_key: Optional[str]
     else:
         content_parts.append(f"New Video: {title}")
 
-    # Description (Optional per platform, user requested hashtags mostly)
-    # User said: "populate a #hashtag in Instagram, X, Blue Sky, Facebook, Threads, Telegram"
-    # And "capture the #hashtags from the video description... included at the end"
-    
     # 3. Platform Specifics
     
     if platform == 'reddit':
         # Reddit uses title and url separately. Content is description.
-        # User said: "post content should contain the text of the video description"
         return {
             'title': title,
-            'content': description, # Full description for Reddit
+            'content': description, 
             'url': url,
             'flair_id': get_reddit_flair_id(flair_key)
         }
         
     elif platform == 'twitter': # X
-        # Two tweets.
-        # Tweet 1: Title + Image (handled by notifier) + Hashtags (if space)
-        # Tweet 2: URL
-        # User said: "option to overlflow into the 2nd Tweet" for hashtags.
-        # For simplicity, we'll put hashtags in Tweet 1 if short, else Tweet 2.
+        # Tweet 1: Title + Image + Hashtags + (1/2)
+        # Tweet 2: URL + (2/2)
         
-        tweet1 = f"{content_parts[0]}" # Just Title/Header
-        if is_live and len(content_parts) > 1:
-             tweet1 += f"\n{content_parts[1]}" # Add schedule info
-             
-        tweet2 = f"{url}"
+        # Construct Tweet 1 base
+        tweet1_base = "\n".join(content_parts)
         
-        # Try adding hashtags to Tweet 1
-        if len(tweet1) + len(hashtag_str) < 270: # Conservative limit
-            tweet1 += f"\n\n{hashtag_str}"
-        else:
-            tweet2 += f"\n\n{hashtag_str}"
+        # Calculate remaining space for hashtags in Tweet 1
+        # Max ~280. Reserve ~10 chars for " (1/2)".
+        # URL is in Tweet 2.
+        
+        tweet1 = f"{tweet1_base}\n\n{hashtag_str}"
+        if len(tweet1) > 260:
+             # If too long, put hashtags in Tweet 2? 
+             # Or just truncate? Let's try to fit what we can.
+             tweet1 = tweet1_base 
+             # Add hashtags to Tweet 2 if Tweet 1 is full?
+             # User asked for "option to overflow into 2nd tweet".
+             # For now, simplistic approach:
+             pass
+
+        tweet1 += " (1/2)"
+        
+        tweet2 = f"{url} (2/2)"
+        if tweet1 == tweet1_base + " (1/2)": # If we stripped hashtags from T1
+             tweet2 += f"\n\n{hashtag_str}"
             
         return {
             'tweet1': tweet1,
@@ -149,33 +152,26 @@ def build_post_content(platform: str, video_data: Dict, flair_key: Optional[str]
         }
         
     elif platform == 'threads':
-        # 5 hashtags 1 topic tag. Topic tag is usually a tag without # in API, 
-        # but Postiz might just take text. User said "populate 'topic_tags': 'video_category'".
-        # We'll return the content string and the topic tag separately.
+        # Threads: Just text. Category tag is already first in hashtag_str.
         
         full_text = "\n".join(content_parts)
         full_text += f"\n{url}"
         full_text += f"\n\n{hashtag_str}"
-        
-        topic_tag = None
-        if flair_key:
-            # Map flair key to a clean topic tag (e.g. "Geopolitics" instead of "#Geopolitics")
-            topic_tag = CATEGORY_HASHTAGS.get(flair_key, "").replace("#", "")
             
         return {
-            'content': full_text,
-            'topic_tag': topic_tag
+            'content': full_text
         }
         
     else: # Facebook, Instagram, Telegram, Blue Sky
-        # Standard format: Header + URL (except IG) + Hashtags
         
         full_text = "\n".join(content_parts)
         
-        if platform != 'instagram':
+        # Add URL (Except for IG and Facebook)
+        # Facebook uses URL field in settings, so we don't put it in body.
+        if platform not in ['instagram', 'facebook']:
             full_text += f"\n{url}"
-        else:
-            full_text += "\nlink in bio"
+        elif platform == 'instagram':
+             full_text += "\nyoutube.com/@ATPGeo\nlink in bio"
             
         full_text += f"\n\n{hashtag_str}"
         
