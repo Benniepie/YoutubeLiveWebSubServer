@@ -1,30 +1,16 @@
-# Postiz API Payload Mockups (v2)
+# Postiz API Payloads v3
 
-This document outlines the JSON payloads that will be sent to the Postiz API for each platform, based on the refactored code that strictly follows the documentation.
-
-**Assumptions for Mock Data:**
-*   **Video Title:** `Global Geopolitics Update`
-*   **Video ID:** `dQw4w9WgXcQ`
-*   **Video URL:** `https://www.youtube.com/watch?v=dQw4w9WgXcQ`
-*   **Configuration:**
-    *   `POSTIZ_API_TYPE`: `schedule`
-    *   `POSTIZ_API_DATE`: `2025-12-31T10:00:00.000Z`
-*   **Fetched Data:**
-    *   **Integration IDs:**
-        *   Facebook: `int_fb_123`
-        *   Telegram: `int_tg_456`
-        *   Instagram: `int_ig_789`
-        *   Blue Sky: `int_bs_101`
-        *   X: `int_x_202`
-        *   Threads: `int_th_303`
-    *   **Uploaded Image:**
-        *   ID: `img_555`
-        *   Path: `https://uploads.postiz.com/img_555.jpg`
+## Assumptions
+* **Video Title:** `Global Geopolitics Update`
+* **Video URL:** `https://www.youtube.com/watch?v=dQw4w9WgXcQ`
+* **Thumbnail:** `https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg`
+* **Description:** `This is a description with #Ukraine #Russia and extra tags.`
+* **Config:** `POSTIZ_API_TYPE` = `schedule`, `POSTIZ_API_DATE` = `2025-12-31...`
 
 ---
 
 ## 1. Facebook (Link Post)
-**Endpoint:** `POST /api/public/v1/posts`
+*Note: Validated code passes `image: []` and puts URL in settings. The `original_image_obj` is computed but NOT used in the payload.*
 
 ```json
 {
@@ -37,8 +23,8 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
       "integration": { "id": "int_fb_123" },
       "value": [
         {
-          "content": "A new video has been added by ATP Geopolitics",
-          "image": []
+          "content": "New Video: Global Geopolitics Update\n\n#Ukraine #Russia",
+          "image": [] 
         }
       ],
       "settings": {
@@ -50,8 +36,8 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
 }
 ```
 
-## 2. Telegram
-**Endpoint:** `POST /api/public/v1/posts`
+## 2. Reddit (Native Embed)
+*Note: Uses `subreddit` setting with `type: link` for native embed. `image` array is empty.*
 
 ```json
 {
@@ -61,25 +47,35 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
   "tags": [],
   "posts": [
     {
-      "integration": { "id": "int_tg_456" },
+      "integration": { "id": "int_reddit_789" },
       "value": [
         {
-          "content": "A new video has been added by ATP Geopolitics\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ",
-          "image": [
-            { "id": "img_555", "path": "https://uploads.postiz.com/img_555.jpg" }
-          ]
+          "content": "This is a description with #Ukraine #Russia and extra tags...",
+          "image": []
         }
       ],
       "settings": {
-        "__type": "telegram"
+        "__type": "reddit",
+        "subreddit": [
+          {
+            "value": {
+              "subreddit": "atpgeo",
+              "title": "Global Geopolitics Update",
+              "type": "link",
+              "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              "is_flair_required": true,
+              "flair": { "id": "flair_hits_losses_123" }
+            }
+          }
+        ]
       }
     }
   ]
 }
 ```
 
-## 3. Instagram
-**Endpoint:** `POST /api/public/v1/posts`
+## 3. Instagram (4:5 Thumbnail)
+*Note: Uses the Resized Image ID.*
 
 ```json
 {
@@ -89,12 +85,12 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
   "tags": [],
   "posts": [
     {
-      "integration": { "id": "int_ig_789" },
+      "integration": { "id": "int_ig_456" },
       "value": [
         {
-          "content": "New YouTube Video: Global Geopolitics Update\nYouTube.com/@atpgeo\nlink in bio",
+          "content": "New Video: Global Geopolitics Update\nlink in bio\n\n#Ukraine #Russia",
           "image": [
-            { "id": "img_555", "path": "https://uploads.postiz.com/img_555.jpg" }
+            { "id": "img_resized_45", "path": "https://uploads.postiz.com/..." }
           ]
         }
       ],
@@ -108,8 +104,8 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
 }
 ```
 
-## 4. Blue Sky
-**Endpoint:** `POST /api/public/v1/posts`
+## 4. X (Twitter)
+*Note: Uses Original Image ID in Tweet 1.*
 
 ```json
 {
@@ -119,44 +115,16 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
   "tags": [],
   "posts": [
     {
-      "integration": { "id": "int_bs_101" },
+      "integration": { "id": "int_x_999" },
       "value": [
         {
-          "content": "New YouTube Video: Global Geopolitics Update\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ",
+          "content": "New Video: Global Geopolitics Update\n\n#Ukraine #Russia",
           "image": [
-            { "id": "img_555", "path": "https://uploads.postiz.com/img_555.jpg" }
-          ]
-        }
-      ],
-      "settings": {
-        "__type": "bluesky"
-      }
-    }
-  ]
-}
-```
-
-## 5. X (Twitter) Thread
-**Endpoint:** `POST /api/public/v1/posts`
-
-```json
-{
-  "type": "schedule",
-  "date": "2025-12-31T10:00:00.000Z",
-  "shortLink": false,
-  "tags": [],
-  "posts": [
-    {
-      "integration": { "id": "int_x_202" },
-      "value": [
-        {
-          "content": "New YouTube Video: Global Geopolitics Update (1/2)",
-          "image": [
-            { "id": "img_555", "path": "https://uploads.postiz.com/img_555.jpg" }
+             { "id": "img_orig_12", "path": "https://uploads.postiz.com/..." }
           ]
         },
         {
-          "content": "https://www.youtube.com/watch?v=dQw4w9WgXcQ (2/2)",
+          "content": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
           "image": []
         }
       ],
@@ -169,8 +137,8 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
 }
 ```
 
-## 6. Threads
-**Endpoint:** `POST /api/public/v1/posts`
+## 5. Threads (Topic Tag)
+*Note: No image uploaded. Topic tag sent separately.*
 
 ```json
 {
@@ -180,13 +148,11 @@ This document outlines the JSON payloads that will be sent to the Postiz API for
   "tags": [],
   "posts": [
     {
-      "integration": { "id": "int_th_303" },
+      "integration": { "id": "int_th_101" },
       "value": [
         {
-          "content": "New Youtube Video: Global Geopolitics Update\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ",
-          "image": [
-            { "id": "img_555", "path": "https://uploads.postiz.com/img_555.jpg" }
-          ]
+          "content": "New Video: Global Geopolitics Update\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n\n#Ukraine #Russia",
+          "image": []
         }
       ],
       "settings": {
