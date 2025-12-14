@@ -53,7 +53,7 @@ def detect_flair_from_image(image_bytes: BytesIO) -> Optional[str]:
         # Crop 10x10 box at bottom-left
         # x=40, y=height-50 (to leave 40px margin from bottom)
         width, height = img.size
-        sample_box = img.crop((40, height - 50, 50, height - 40)) 
+        sample_box = img.crop((0, height - 10, 10, height)) 
         
         # Average color
         avg_color_img = sample_box.resize((1, 1))
