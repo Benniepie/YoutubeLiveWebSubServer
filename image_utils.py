@@ -6,12 +6,12 @@ from typing import Optional, Tuple
 
 # Flair Palette (RGB)
 FLAIR_PALETTE = {
-    "ORANGE_HITS":  (255, 140, 0),    # Hits-and-Losses
-    "GREEN_AID":    (50, 205, 50),    # MilitaryAid
-    "BLUE_MAP":     (30, 144, 255),   # FrontLineMap
-    "PINK_GEO":     (255, 20, 147),   # GeopoliticalNews
-    "RED_BREAKING": (178, 34, 34),    # BreakingNews
-    "YELLOW_EXTRA": (255, 215, 0),    # UpdateExtra
+    "ORANGE_HITS":  (219, 143, 10),    # Hits-and-Losses
+    "GREEN_AID":    (14, 219, 10),    # MilitaryAid
+    "BLUE_MAP":     (0, 17, 255),   # FrontLineMap
+    "PINK_GEO":     (216, 10, 19),   # GeopoliticalNews
+    "RED_BREAKING": (255, 0, 0),    # BreakingNews
+    "YELLOW_EXTRA": (255, 234, 0),    # UpdateExtra
 }
 
 def download_image(url: str) -> Optional[BytesIO]:
@@ -53,7 +53,7 @@ def detect_flair_from_image(image_bytes: BytesIO) -> Optional[str]:
         # Crop 10x10 box at bottom-left
         # x=40, y=height-50 (to leave 40px margin from bottom)
         width, height = img.size
-        sample_box = img.crop((0, height - 10, 10, height)) 
+        sample_box = img.crop((0, height - 20, 10, height-10)) 
         
         # Average color
         avg_color_img = sample_box.resize((1, 1))
