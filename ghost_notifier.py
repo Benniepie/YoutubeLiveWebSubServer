@@ -141,7 +141,8 @@ class GhostNotifier:
         # 2. Upload Image & Detect Tag
         feature_image_url, flair_key = self._upload_thumbnail(video_id)
         tag_name = TAG_MAP.get(flair_key, "News")
-
+        tagslist = list(tag_name)
+        
         # 3. Format Date/Time
         # Logic: If upcoming, add scheduled line.
         is_upcoming = video_data.get('live_status') == 'is_upcoming'
@@ -199,22 +200,35 @@ class GhostNotifier:
         custom_excerpt = description[:300] if description else ""
 
         post_payload = {
-            "posts": [{
+            "posts": [
+                {
                 "title": title,
                 "slug": full_slug,
-                "tags": [tag_name], 
+                "tags": tagslist,
+                "lexical": None, 
                 "html": content_html,
                 "status": "published",
+                "visibility": "public",
+                "feature_image_alt": "Youtube thumbnail",
+                "feature_image_caption": "",
                 "custom_excerpt": custom_excerpt,
                 "feature_image": feature_image_url,
                 "published_at": published_at,
                 "created_at": created_at,
-            }]
+                "authors": [
+                    {"id": "1"},
+                    {"id": "6666de5fa10c4c5fe1fb9c57"},
+                    ],  
+                }
+            ]
         }
 
         # 6. Create Post
         url = f"{self.base_url}/posts/"
-        params = {'source': 'html'}
+        params = {
+            'source': 'html',
+            'formats': 'html'
+        }
         headers = self._get_headers()
         
         try:
