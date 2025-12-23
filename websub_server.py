@@ -41,6 +41,8 @@ postiz = PostizNotifier()
 youtube = YouTubeMetadata()
 notification_rules = NotificationRules(db)
 
+from ghost_notifier import GhostNotifier
+
 # Import Telegram for debug monitoring
 from telegram_notifier import TelegramNotifier
 telegram_debug = TelegramNotifier(use_test_bot=True)  # Use test bot for monitoring
@@ -55,47 +57,86 @@ def get_video_lock(video_id):
             video_locks[video_id] = threading.Lock()
         return video_locks[video_id]
 
-def trigger_postiz(video_data):
+# Initialize Ghost Notifier
+ghost = GhostNotifier()
+
+def trigger_postiz_and_ghost(video_data):
     """
-    Trigger Postiz notifications if not already sent.
+    Trigger Postiz and Ghost notifications if not already sent.
     """
     video_id = video_data['video_id']
-    print(f"  - Checking Postiz for video {video_id}...")
+    print(f"  - Checking Integration Triggers for video {video_id}...")
     
     # Check delivery status to avoid duplicates
     delivery_status = db.get_delivery_status(video_id)
-    already_processed = any(d['platform'].startswith('postiz') for d in delivery_status)
     
-    if already_processed:
+    # --- Postiz Handler ---
+    already_processed_postiz = any(d['platform'].startswith('postiz') for d in delivery_status)
+    
+    if not already_processed_postiz:
+        print(f"  - Sending Postiz notifications for {video_id}...")
+        try:
+            results = postiz.send_notification(video_data)
+            
+            for platform, result in results.items():
+                status = 'success' if result['success'] else 'failed'
+                error = result.get('error')
+                response = result.get('response')
+                
+                db.mark_delivered(
+                    video_id, 
+                    f"postiz_{platform}", 
+                    status, 
+                    response, 
+                    error
+                )
+                
+                if status == 'success':
+                    print(f"    ✅ Postiz ({platform}): Sent")
+                else:
+                    print(f"    ❌ Postiz ({platform}): Failed - {error}")
+                    
+        except Exception as e:
+            print(f"    ❌ Postiz Error: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
         print(f"    ℹ️  Postiz already processed for {video_id}. Skipping.")
-        return
 
-    print(f"  - Sending Postiz notifications for {video_id}...")
-    try:
-        results = postiz.send_notification(video_data)
-        
-        for platform, result in results.items():
+    # --- Ghost Handler ---
+    already_processed_ghost = any(d['platform'] == 'ghost' for d in delivery_status)
+    
+    if not already_processed_ghost:
+        print(f"  - Sending Ghost notification for {video_id}...")
+        try:
+            result = ghost.send_notification(video_data)
             status = 'success' if result['success'] else 'failed'
             error = result.get('error')
             response = result.get('response')
             
             db.mark_delivered(
                 video_id, 
-                f"postiz_{platform}", 
+                'ghost', 
                 status, 
                 response, 
                 error
             )
             
             if status == 'success':
-                print(f"    ✅ Postiz ({platform}): Sent")
+                 # If "already_exists", it's a success but we didn't create a new one.
+                 msg = "Sent"
+                 if result.get('message') == 'Post already exists':
+                     msg = "Skipped (Already Exists)"
+                 print(f"    ✅ Ghost: {msg}")
             else:
-                print(f"    ❌ Postiz ({platform}): Failed - {error}")
-                
-    except Exception as e:
-        print(f"    ❌ Postiz Error: {e}")
-        import traceback
-        traceback.print_exc()
+                 print(f"    ❌ Ghost: Failed - {error}")
+                 
+        except Exception as e:
+             print(f"    ❌ Ghost Error: {e}")
+             import traceback
+             traceback.print_exc()
+    else:
+         print(f"    ℹ️  Ghost already processed for {video_id}. Skipping.")
 
 # --- Core Logic ---
 def process_video_event(video_data, raw_xml, event_type, is_new, retry_count=0):
@@ -182,16 +223,16 @@ def process_video_event(video_data, raw_xml, event_type, is_new, retry_count=0):
             video_data['live_status'] = actual_live_status
             video_data['description'] = youtube_details.get('description')
 
-            # --- Postiz Integration ---
+            # --- Postiz & Ghost Integration ---
             # Post both live & non-live streams, but only once per video.
             # We wait for the "second check" (approx 60s) to ensure metadata is stable.
             if is_new:
                 if retry_count == 0:
-                    print("  - Scheduling Postiz notification check in 60 seconds...")
-                    threading.Timer(60.0, trigger_postiz, args=[video_data]).start()
+                    print("  - Scheduling Postiz/Ghost notification check in 60 seconds...")
+                    threading.Timer(60.0, trigger_postiz_and_ghost, args=[video_data]).start()
                 else:
                     # We are in the retry/second check, so trigger immediately
-                    trigger_postiz(video_data)
+                    trigger_postiz_and_ghost(video_data)
         else:
             print("    ⚠️  Failed to fetch YouTube API metadata")
             processing_log.append("❌ YouTube API: Failed")

@@ -15,7 +15,7 @@ REDDIT_FLAIR_ENV_MAP = {
 
 # Map Flair Keys to Category Hashtags
 CATEGORY_HASHTAGS = {
-    "ORANGE_HITS":  "#HitsAndLosses",
+    "ORANGE_HITS":  "#UkraineWar",
     "GREEN_AID":    "#MilitaryAid",
     "BLUE_MAP":     "#FrontLineMap",
     "PINK_GEO":     "#Geopolitics",

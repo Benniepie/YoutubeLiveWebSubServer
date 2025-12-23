@@ -164,3 +164,4 @@ PROGRESS_*.md
 # YouTube API credentials - DO NOT COMMIT
 client_secret.json
 token.pickle
+ghostcode/
