@@ -1,13 +1,15 @@
 import os
 import requests
 import jwt
+import datetime as date
 from datetime import datetime
 import re
+
 import html
 import io
 import logging
 from typing import Dict, Optional, Tuple
-
+import time
 import image_utils
 
 # Constants
@@ -158,7 +160,7 @@ class GhostNotifier:
         if is_upcoming and scheduled_time:
             try:
                 # Format: 2025-12-25T15:00:00Z -> readable
-                dt = datetime.fromisoformat(scheduled_time.replace('Z', '+00:00'))
+                dt = date.fromisoformat(scheduled_time.replace('Z', '+00:00'))
                 fmt_time = dt.strftime('%Y-%m-%d %H:%M UTC')
                 content_html += f"<p><strong>🔴 LIVE STREAM SCHEDULED FOR {fmt_time}</strong></p>\n"
             except:
@@ -187,14 +189,30 @@ class GhostNotifier:
         # Try to use scheduled time as publish time? 
         # Or just publish now? User said "video published date should be added to created_at and published_at"
         # Since this runs when notification arrives, published_at from YT is appropriate.
-        if video_data.get('published_at'): # API provides publishedAt
-             # Ensure ISO format
-             published_at = video_data.get('published_at')
-             created_at = published_at
-        elif video_data.get('release_timestamp'): # From ytdlp, usually
-             dt = datetime.fromtimestamp(video_data['release_timestamp'])
-             published_at = dt.isoformat()
-             created_at = published_at
+        #if video_data.get('published_time'): # API provides publishedAt
+            # Ensure ISO format
+        published_at = video_data['published_time']
+        published_at2 = video_data.get('published_time')
+        print(published_at)
+        print(published_at2)
+
+
+
+
+
+
+
+        #elif video
+        # _data.get('release_timestamp'): # From ytdlp, usually
+        #     dt = datetime.fromtimestamp(video_data['release_timestamp'])
+        #     published_at = dt.isoformat()
+        #     created_at = published_at
+
+        print(published_at)
+        # Default to n
+        # ow
+        #created_at = datetime.now().isoformat()
+        #published_at = created_at
 
         full_slug = f"{video_id}-{self._slugify(title)}"
         custom_excerpt = description[:300] if description else ""
@@ -204,7 +222,7 @@ class GhostNotifier:
                 {
                 "title": title,
                 "slug": full_slug,
-                "tags": tagslist,
+                "tags": [tag_name],
                 "lexical": None, 
                 "html": content_html,
                 "status": "published",
@@ -213,6 +231,7 @@ class GhostNotifier:
                 "feature_image_caption": "",
                 "custom_excerpt": custom_excerpt,
                 "feature_image": feature_image_url,
+                "updated_at": None,
                 "published_at": published_at,
                 "created_at": created_at,
                 "authors": [
@@ -230,7 +249,10 @@ class GhostNotifier:
             'formats': 'html'
         }
         headers = self._get_headers()
-        
+        print(post_payload)
+        print(url)
+        print(params)
+        print(headers)
         try:
             r = requests.post(url, headers=headers, params=params, json=post_payload)
             r.raise_for_status()

@@ -63,6 +63,7 @@ class YouTubeMetadata:
             'description': api_result['description'],
             'channel_id': api_result['channel_id'],
             'channel': api_result['channel_title'],
+            'published_time': api_result.get('published_time'),
             
             # Live streaming detection
             'is_live': is_live,
