@@ -20,6 +20,8 @@ GOOGLE_IP_RANGES = [
     '64.18.0.0/20',        # Google services
     '207.126.144.0/20',    # Google services
     '173.194.0.0/16',      # Google services
+    '192.178.11.0/24',     # Google services
+    '192.178.15.0/24',     # Google services
 ]
 
 def is_google_ip(ip_address: str) -> bool:
