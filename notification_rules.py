@@ -9,8 +9,8 @@ import json
 class NotificationRules:
     """Determine if and what type of notification to send"""
     
-    # Time window for notifications (2 hours)
-    NOTIFICATION_WINDOW_HOURS = 2
+    # Time window for notifications (18 hours)
+    NOTIFICATION_WINDOW_HOURS = 18
     
     def __init__(self, db):
         self.db = db
@@ -22,7 +22,7 @@ class NotificationRules:
         Returns: (should_notify: bool, notification_type: str)
         
         Notification types:
-        - 'upcoming' - Stream starting soon (< 2 hours)
+        - 'upcoming' - Stream starting soon (< 18 hours)
         - 'live_now' - Stream just went live
         - 'reschedule' - Previously announced stream changed time
         - None - Don't notify
@@ -78,7 +78,7 @@ class NotificationRules:
             time_until_start = scheduled_dt - now
             hours_until = time_until_start.total_seconds() / 3600
             
-            # Rule 6: Only notify if starting within 2 hours
+            # Rule 6: Only notify if starting within 18 hours
             if hours_until > self.NOTIFICATION_WINDOW_HOURS:
                 return (False, None)
             
@@ -95,7 +95,7 @@ class NotificationRules:
                     # Time changed - send reschedule notification
                     return (True, 'reschedule')
                 elif not already_notified:
-                    # Stream was rescheduled from >2hrs to ≤2hrs (no previous notification)
+                    # Stream was rescheduled from >18hrs to ≤18hrs (no previous notification)
                     # This is a new notification opportunity
                     return (True, 'upcoming')
             

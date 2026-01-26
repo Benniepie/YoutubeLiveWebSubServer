@@ -167,13 +167,13 @@ class GhostNotifier:
                 pass
 
         # Add embed
-        embed_url = f"https://www.youtube.com/embed/{video_id}?feature=oembed?ref=atpgeo"
+        embed_url = f"https://www.youtube.com/embed/{video_id}?feature=oembed?origin=https://atpgeo.com"
         content_html += (
             f'<figure class="kg-card kg-embed-card kg-card-hascaption">'
             f'<iframe width="200" height="113" src="{embed_url}" frameborder="0" '
             f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" '
             f'referrerpolicy="strict-origin-when-cross-origin" allowfullscreen="" title="{html.escape(title)}"></iframe>'
-            f'<figcaption><p dir="ltr"><span style="white-space: pre-wrap;"><a href="https://www.youtube.com/watch?v={video_id}?ref=atpgeo">Watch Video on YouTube</a></span></p></figcaption>'
+            f'<figcaption><p dir="ltr"><span style="white-space: pre-wrap;"><a href="https://www.youtube.com/watch?v={video_id}" referrerPolicy="origin">Watch Video on YouTube</a></span></p></figcaption>'
             f'</figure>\n'
         )
         
