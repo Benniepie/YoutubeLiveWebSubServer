@@ -1,12 +1,16 @@
 # YouTube WebSub Notification Server
 
-A production-ready Python Flask server that receives real-time push notifications from YouTube via WebSub (PubSubHubbub) and sends smart Discord notifications for live streams and video uploads.
+A production-ready Python Flask server that receives real-time push notifications from YouTube via WebSub (PubSubHubbub)
+1) fetches additional video metadata from the Youtube Data v3 API (Previously used YT-DLP but this was frequently blocked by Youtube)
+2) sends smart Discord notifications for live streams
+3) posts to self-hosted instance of Postiz public API for Facebook, Instagram, Threads, X, Blue Sky, Telegram
+4) posts article to self-hosted Ghost CMS instance with embedded video using Ghost admin API
 
 ## Features
 
-- **Real-time YouTube notifications** via WebSub protocol (no API quota usage)
+- **Real-time YouTube notifications** via WebSub protocol (no polling)
 - **Smart Discord notifications** with rule-based filtering to prevent spam
-- **Live stream detection** using yt-dlp metadata fetching
+- **Live stream detection** logic using Youtube Data API v3 (minimal quota usage)
 - **SQLite database** for event tracking and delivery history
 - **Security features** including IP whitelisting and rate limiting
 - **Docker deployment** with complete containerization
